@@ -21,6 +21,18 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 @dataclass(frozen=True)
 class Settings:
     host: str = _env("BACKEND_HOST", "0.0.0.0")
@@ -28,9 +40,14 @@ class Settings:
     event_log_max: int = _env_int("EVENT_LOG_MAX", 1000)
     event_limit_default: int = _env_int("EVENT_LIMIT_DEFAULT", 200)
     summary_event_count: int = _env_int("SUMMARY_EVENT_COUNT", 20)
+    db_path: str = _env("BACKEND_DB_PATH", "backend/data/desktopai.db")
+    db_retention_days: int = _env_int("DB_RETENTION_DAYS", 14)
+    db_max_events: int = _env_int("DB_MAX_EVENTS", 20000)
 
     ollama_url: str = _env("OLLAMA_URL", "http://localhost:11434")
     ollama_model: str = _env("OLLAMA_MODEL", "llama3.1:8b")
+    classifier_default: str = _env("CLASSIFIER_DEFAULT", "docs")
+    classifier_use_ollama: bool = _env_bool("CLASSIFIER_USE_OLLAMA", False)
 
     allowed_origins: List[str] = field(
         default_factory=lambda: [

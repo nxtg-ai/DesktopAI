@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -10,9 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from .classifier import ActivityClassifier
 from .config import settings
+from .db import EventDatabase
 from .ollama import OllamaClient
-from .schemas import StateResponse, WindowEvent
+from .schemas import ClassifyRequest, StateResponse, WindowEvent
 from .state import StateStore
 from .ws import WebSocketHub
 
@@ -37,6 +40,12 @@ app = FastAPI(title="DesktopAI Backend", version="0.1.0")
 store = StateStore(max_events=settings.event_log_max)
 hub = WebSocketHub()
 ollama = OllamaClient(settings.ollama_url, settings.ollama_model)
+db = EventDatabase(settings.db_path, settings.db_retention_days, settings.db_max_events)
+classifier = ActivityClassifier(
+    ollama,
+    default_category=settings.classifier_default,
+    use_ollama=settings.classifier_use_ollama,
+)
 
 if settings.allowed_origins:
     app.add_middleware(
@@ -66,7 +75,15 @@ async def health() -> dict:
 async def get_state() -> StateResponse:
     current = await store.current()
     count = await store.event_count()
-    return StateResponse(current=current, event_count=count)
+    idle, idle_since = await store.idle_state()
+    category = current.category if current else None
+    return StateResponse(
+        current=current,
+        event_count=count,
+        idle=idle,
+        idle_since=idle_since,
+        category=category,
+    )
 
 
 @app.get("/api/events")
@@ -78,11 +95,26 @@ async def get_events(limit: Optional[int] = None) -> dict:
 
 
 async def _handle_event(event: WindowEvent) -> None:
+    if event.type == "foreground" and not event.category:
+        classification = await classifier.classify(event)
+        event.category = classification.category
+    await db.record_event(event)
     await store.record(event)
+    current = await store.current()
     count = await store.event_count()
+    idle, idle_since = await store.idle_state()
     await hub.broadcast_json({"type": "event", "event": _dump(event)})
     await hub.broadcast_json(
-        {"type": "state", "state": {"current": _dump(event), "event_count": count}}
+        {
+            "type": "state",
+            "state": {
+                "current": _dump(current) if current else None,
+                "event_count": count,
+                "idle": idle,
+                "idle_since": idle_since.isoformat() if idle_since else None,
+                "category": current.category if current else None,
+            },
+        }
     )
 
 
@@ -111,10 +143,17 @@ async def ingest_ws(ws: WebSocket) -> None:
 async def ui_ws(ws: WebSocket) -> None:
     await hub.add(ws)
     current, events = await store.snapshot()
+    idle, idle_since = await store.idle_state()
     await ws.send_json(
         {
             "type": "snapshot",
-            "state": {"current": _dump(current) if current else None, "event_count": len(events)},
+            "state": {
+                "current": _dump(current) if current else None,
+                "event_count": len(events),
+                "idle": idle,
+                "idle_since": idle_since.isoformat() if idle_since else None,
+                "category": current.category if current else None,
+            },
             "events": [_dump(event) for event in events[-settings.event_limit_default :]],
         }
     )
@@ -141,7 +180,9 @@ async def summarize() -> dict:
     if not current and not events:
         return {"summary": "No events yet."}
 
-    recent = events[-settings.summary_event_count :]
+    recent = [event for event in events if event.type == "foreground"][
+        -settings.summary_event_count :
+    ]
     lines = []
     if current:
         lines.append(
@@ -164,3 +205,25 @@ async def summarize() -> dict:
     if summary is None:
         raise HTTPException(status_code=502, detail="Ollama summarize failed")
     return {"summary": summary.strip()}
+
+
+@app.post("/api/classify")
+async def classify(request: ClassifyRequest) -> dict:
+    event = WindowEvent(
+        type=request.type,
+        hwnd="0x0",
+        title=request.title,
+        process_exe=request.process_exe,
+        pid=request.pid,
+        timestamp=datetime.now(timezone.utc),
+        source="api",
+        uia=request.uia,
+    )
+    result = await classifier.classify(event, use_ollama=request.use_ollama)
+    return {"category": result.category, "source": result.source}
+
+
+@app.on_event("startup")
+async def load_persisted_state() -> None:
+    current, events, idle, idle_since = await db.load_snapshot(settings.event_log_max)
+    await store.hydrate(events, current, idle, idle_since)

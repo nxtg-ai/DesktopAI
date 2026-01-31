@@ -34,6 +34,9 @@ class OllamaClient:
             return self._available
 
     async def summarize(self, prompt: str) -> Optional[str]:
+        return await self.generate(prompt)
+
+    async def generate(self, prompt: str) -> Optional[str]:
         payload = {
             "model": self.model,
             "prompt": prompt,
