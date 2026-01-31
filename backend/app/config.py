@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 try:
@@ -32,11 +32,13 @@ class Settings:
     ollama_url: str = _env("OLLAMA_URL", "http://localhost:11434")
     ollama_model: str = _env("OLLAMA_MODEL", "llama3.1:8b")
 
-    allowed_origins: List[str] = [
-        origin.strip()
-        for origin in _env("ALLOWED_ORIGINS", "").split(",")
-        if origin.strip()
-    ]
+    allowed_origins: List[str] = field(
+        default_factory=lambda: [
+            origin.strip()
+            for origin in _env("ALLOWED_ORIGINS", "").split(",")
+            if origin.strip()
+        ]
+    )
 
 
 settings = Settings()
