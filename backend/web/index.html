@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DesktopAI Live Context</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="bg"></div>
+    <main class="app">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">DesktopAI</p>
+          <h1>Live Desktop Context</h1>
+          <p class="subhead">Foreground window activity streaming locally from Windows → WSL2.</p>
+        </div>
+        <div class="status" id="status">connecting</div>
+      </header>
+
+      <section class="grid">
+        <article class="card" id="current">
+          <div class="card-header">
+            <h2>Current Window</h2>
+            <span class="pill" id="current-app">—</span>
+          </div>
+          <div class="card-body">
+            <p class="title" id="current-title">Waiting for events…</p>
+            <p class="meta" id="current-meta">—</p>
+            <p class="meta" id="current-time">—</p>
+          </div>
+        </article>
+
+        <article class="card" id="summary">
+          <div class="card-header">
+            <h2>Local Summary</h2>
+            <span class="pill" id="ollama-status">checking…</span>
+          </div>
+          <div class="card-body">
+            <p class="summary-text" id="summary-text">Ollama summary is optional. If available, click below.</p>
+            <button class="btn" id="summary-btn" disabled>Summarize with Ollama</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Recent Events</h2>
+          <span class="pill" id="event-count">0</span>
+        </div>
+        <ul class="events" id="events"></ul>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
