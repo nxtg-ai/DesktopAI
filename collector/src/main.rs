@@ -9,15 +9,14 @@ use tungstenite::{connect, Message};
 use url::Url;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND};
-use windows::Win32::System::ProcessStatus::QueryFullProcessImageNameW;
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-use windows::Win32::UI::Accessibility::{
-    SetWinEventHook, EVENT_SYSTEM_FOREGROUND, OBJID_WINDOW, WINEVENT_OUTOFCONTEXT,
-    WINEVENT_SKIPOWNPROCESS,
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, GetWindowTextLengthW, GetWindowTextW,
-    GetWindowThreadProcessId, TranslateMessage, MSG,
+    GetWindowThreadProcessId, TranslateMessage, EVENT_SYSTEM_FOREGROUND, MSG, OBJID_WINDOW,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
 };
 
 static EVENT_SENDER: OnceLock<Sender<WindowEvent>> = OnceLock::new();
@@ -69,7 +68,7 @@ fn window_title(hwnd: HWND) -> String {
             return String::new();
         }
         let mut buffer = vec![0u16; (len + 1) as usize];
-        let copied = GetWindowTextW(hwnd, PWSTR(buffer.as_mut_ptr()), len + 1);
+        let copied = GetWindowTextW(hwnd, buffer.as_mut_slice());
         if copied == 0 {
             return String::new();
         }
@@ -79,15 +78,25 @@ fn window_title(hwnd: HWND) -> String {
 
 fn process_path(pid: u32) -> String {
     unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        let handle = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => h,
+            Err(_) => return String::new(),
+        };
         if handle.is_invalid() {
             return String::new();
         }
+
         let mut buffer = vec![0u16; 260];
         let mut size: u32 = buffer.len() as u32;
-        let ok = QueryFullProcessImageNameW(handle, 0, PWSTR(buffer.as_mut_ptr()), &mut size)
-            .as_bool();
+        let ok = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_FORMAT(0),
+            PWSTR(buffer.as_mut_ptr()),
+            &mut size as *mut u32,
+        )
+        .is_ok();
         let _ = CloseHandle(handle);
+
         if !ok || size == 0 {
             return String::new();
         }
@@ -102,7 +111,7 @@ fn build_event(hwnd: HWND) -> Option<WindowEvent> {
     let title = window_title(hwnd);
     let mut pid: u32 = 0;
     unsafe {
-        let _ = GetWindowThreadProcessId(hwnd, &mut pid);
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
     }
     let process_exe = if pid == 0 { String::new() } else { process_path(pid) };
     Some(WindowEvent {
@@ -117,7 +126,7 @@ fn build_event(hwnd: HWND) -> Option<WindowEvent> {
 }
 
 unsafe extern "system" fn win_event_hook(
-    _hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
+    _hook: HWINEVENTHOOK,
     event: u32,
     hwnd: HWND,
     id_object: i32,
@@ -128,7 +137,7 @@ unsafe extern "system" fn win_event_hook(
     if event != EVENT_SYSTEM_FOREGROUND {
         return;
     }
-    if id_object != OBJID_WINDOW {
+    if id_object != OBJID_WINDOW.0 {
         return;
     }
     let Some(event) = build_event(hwnd) else {
