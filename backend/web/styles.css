@@ -139,6 +139,29 @@ h1 {
   color: var(--muted);
 }
 
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.filters input,
+.filters select {
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink);
+  min-width: 160px;
+}
+
+.filters input::placeholder {
+  color: var(--muted);
+}
+
 .btn {
   border: none;
   border-radius: 999px;
@@ -188,6 +211,34 @@ h1 {
   font-size: 12px;
   color: var(--muted);
   font-family: var(--font-mono);
+}
+
+.event-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 139, 141, 0.12);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tag.type-idle {
+  background: rgba(244, 139, 74, 0.2);
+  color: #b85b2b;
+}
+
+.tag.type-active {
+  background: rgba(27, 30, 38, 0.12);
+  color: var(--muted);
 }
 
 @keyframes fadeIn {

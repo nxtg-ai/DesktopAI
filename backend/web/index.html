@@ -27,6 +27,8 @@
           <div class="card-body">
             <p class="title" id="current-title">Waiting for events…</p>
             <p class="meta" id="current-meta">—</p>
+            <p class="meta" id="current-category">Category: —</p>
+            <p class="meta" id="current-idle">Status: —</p>
             <p class="meta" id="current-time">—</p>
           </div>
         </article>
@@ -47,6 +49,29 @@
         <div class="card-header">
           <h2>Recent Events</h2>
           <span class="pill" id="event-count">0</span>
+        </div>
+        <div class="filters">
+          <input
+            type="search"
+            id="event-search"
+            placeholder="Search title, app, UIA hints…"
+            aria-label="Search events"
+          />
+          <select id="event-category" aria-label="Filter by category">
+            <option value="all">All categories</option>
+            <option value="coding">Coding</option>
+            <option value="docs">Docs</option>
+            <option value="comms">Comms</option>
+            <option value="web">Web</option>
+            <option value="terminal">Terminal</option>
+            <option value="meeting">Meeting</option>
+          </select>
+          <select id="event-type" aria-label="Filter by event type">
+            <option value="all">All events</option>
+            <option value="foreground">Foreground</option>
+            <option value="idle">Idle</option>
+            <option value="active">Active</option>
+          </select>
         </div>
         <ul class="events" id="events"></ul>
       </section>
