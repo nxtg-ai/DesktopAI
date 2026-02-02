@@ -16,6 +16,7 @@ from .config import settings
 from .db import EventDatabase
 from .ollama import OllamaClient
 from .schemas import ClassifyRequest, StateResponse, WindowEvent
+from .selftest import run_selftest
 from .state import StateStore
 from .ws import WebSocketHub
 
@@ -69,6 +70,11 @@ async def root() -> HTMLResponse:
 @app.get("/api/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/selftest")
+async def selftest() -> dict:
+    return run_selftest()
 
 
 @app.get("/api/state", response_model=StateResponse)
