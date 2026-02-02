@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .classifier import ActivityClassifier
+from .collector_status import CollectorStatusStore
 from .config import settings
 from .db import EventDatabase
 from .ollama import OllamaClient
@@ -42,6 +43,7 @@ store = StateStore(max_events=settings.event_log_max)
 hub = WebSocketHub()
 ollama = OllamaClient(settings.ollama_url, settings.ollama_model)
 db = EventDatabase(settings.db_path, settings.db_retention_days, settings.db_max_events)
+collector_status = CollectorStatusStore()
 classifier = ActivityClassifier(
     ollama,
     default_category=settings.classifier_default,
@@ -100,10 +102,24 @@ async def get_events(limit: Optional[int] = None) -> dict:
     return {"events": [_dump(event) for event in events]}
 
 
-async def _handle_event(event: WindowEvent) -> None:
+@app.get("/api/collector")
+async def get_collector_status() -> dict:
+    """Debug endpoint: is the Windows collector connected and sending UIA?"""
+    return await collector_status.snapshot()
+
+
+async def _handle_event(event: WindowEvent, *, transport: str) -> None:
     if event.type == "foreground" and not event.category:
         classification = await classifier.classify(event)
         event.category = classification.category
+
+    await collector_status.note_event(
+        event.timestamp,
+        transport=transport,
+        source=event.source,
+        has_uia=event.uia is not None,
+    )
+
     await db.record_event(event)
     await store.record(event)
     current = await store.current()
@@ -126,22 +142,25 @@ async def _handle_event(event: WindowEvent) -> None:
 
 @app.post("/api/events")
 async def post_event(event: WindowEvent) -> dict:
-    await _handle_event(event)
+    await _handle_event(event, transport="http")
     return {"status": "ok"}
 
 
 @app.websocket("/ingest")
 async def ingest_ws(ws: WebSocket) -> None:
     await ws.accept()
+    await collector_status.note_ws_connected(datetime.now(timezone.utc))
     try:
         while True:
             data = await ws.receive_json()
             event = _parse_event(data)
-            await _handle_event(event)
+            await _handle_event(event, transport="ws")
             await ws.send_json({"status": "ok"})
     except WebSocketDisconnect:
+        await collector_status.note_ws_disconnected(datetime.now(timezone.utc))
         logger.info("Collector WS disconnected")
     except Exception as exc:
+        await collector_status.note_ws_disconnected(datetime.now(timezone.utc))
         logger.exception("Collector WS error: %s", exc)
 
 
