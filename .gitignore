@@ -9,3 +9,4 @@ backend/.ruff_cache/
 backend/.coverage
 backend/htmlcov/
 collector/target/
+backend/data/
