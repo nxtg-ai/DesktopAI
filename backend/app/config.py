@@ -75,6 +75,7 @@ class Settings:
     ui_telemetry_artifact_dir: str = _env("UI_TELEMETRY_ARTIFACT_DIR", "artifacts/ui/telemetry")
     ui_telemetry_max_events: int = _env_int("UI_TELEMETRY_MAX_EVENTS", 5000)
     runtime_log_max_entries: int = _env_int("RUNTIME_LOG_MAX_ENTRIES", 2000)
+    api_token: str = _env("API_TOKEN", "")
 
     allowed_origins: List[str] = field(
         default_factory=lambda: [

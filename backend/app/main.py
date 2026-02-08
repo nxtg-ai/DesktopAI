@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from .auth import TokenAuthMiddleware
 from .classifier import ActivityClassifier
 from .collector_status import CollectorStatusStore
 from .config import settings
@@ -251,6 +252,8 @@ if settings.allowed_origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+app.add_middleware(TokenAuthMiddleware)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
