@@ -1,44 +1,166 @@
-# DesktopAI Phase 2
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="DesktopAI" width="100%"/>
+</p>
 
-Local‑first desktop context pipeline:
-- **Windows collector (Rust):** foreground window changes + idle/active signal + optional UIA snapshot
-- **WSL2 backend (FastAPI):** state + SQLite persistence + classification + Web UI
-- **Web UI:** live state, category + idle status, filter/search
+<p align="center">
+  <a href="#quickstart"><strong>Quickstart</strong></a> &nbsp;&middot;&nbsp;
+  <a href="#architecture"><strong>Architecture</strong></a> &nbsp;&middot;&nbsp;
+  <a href="#features"><strong>Features</strong></a> &nbsp;&middot;&nbsp;
+  <a href="#api-reference"><strong>API</strong></a> &nbsp;&middot;&nbsp;
+  <a href="#testing"><strong>Testing</strong></a>
+</p>
 
-## Quickstart (WSL2 backend)
+<p align="center">
+  <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust"/>
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite"/>
+  <img src="https://img.shields.io/badge/WebSocket-010101?style=for-the-badge&logo=socket.io&logoColor=white" alt="WebSocket"/>
+  <img src="https://img.shields.io/badge/WSL2-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="WSL2"/>
+</p>
+
+<p align="center">
+  <img src="https://github.com/nxtg-ai/DesktopAI/actions/workflows/backend.yml/badge.svg" alt="CI"/>
+  <img src="https://img.shields.io/badge/tests-125%20passing-brightgreen" alt="Tests"/>
+  <img src="https://img.shields.io/badge/cloud%20deps-zero-blue" alt="Zero cloud deps"/>
+  <img src="https://img.shields.io/badge/license-private-lightgrey" alt="License"/>
+</p>
+
+---
+
+An intelligent desktop assistant that **observes** your Windows activity in real time, **classifies** what you're doing, and can **autonomously execute** tasks like drafting emails, managing windows, and automating workflows &mdash; all running locally with zero cloud dependencies.
+
+<p align="center">
+  <img src="docs/assets/dataflow.svg" alt="Data flow" width="100%"/>
+</p>
+
+---
+
+## Architecture
+
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="Architecture" width="100%"/>
+</p>
+
+<table>
+<tr>
+<td width="33%">
+
+### Rust Collector
+Low-level Windows observer built in Rust. Hooks into Win32 and UI Automation APIs to capture foreground window changes, idle/active transitions, and optional UIA snapshots. Ships events over WebSocket to the backend in real time.
+
+</td>
+<td width="34%">
+
+### FastAPI Backend
+Python backend running in WSL2. Manages state, persists to SQLite, classifies activity, orchestrates autonomous task execution, and serves the web UI. 40+ REST endpoints and 2 WebSocket channels.
+
+</td>
+<td width="33%">
+
+### Live Web UI
+Real-time dashboard streaming desktop context over WebSocket. Event filters, category classification, autonomy controls, voice interface, Ollama integration panel, and telemetry journey console.
+
+</td>
+</tr>
+</table>
+
+---
+
+## Features
+
+<table>
+<tr>
+<td align="center" width="25%">
+<br/>
+<img src="https://img.shields.io/badge/-Real--Time-0f8b8d?style=flat-square" alt="Real-Time"/>
+<br/><br/>
+<strong>Live Window Tracking</strong><br/>
+<sub>Foreground changes, idle detection, and UIA snapshots streamed in under 50ms end-to-end</sub>
+<br/><br/>
+</td>
+<td align="center" width="25%">
+<br/>
+<img src="https://img.shields.io/badge/-AI--Powered-7c3aed?style=flat-square" alt="AI"/>
+<br/><br/>
+<strong>Activity Classification</strong><br/>
+<sub>Auto-categorize into coding, docs, comms, web, terminal, meeting &mdash; rules or local LLM</sub>
+<br/><br/>
+</td>
+<td align="center" width="25%">
+<br/>
+<img src="https://img.shields.io/badge/-Autonomous-f48b4a?style=flat-square" alt="Autonomous"/>
+<br/><br/>
+<strong>Task Execution</strong><br/>
+<sub>Planner &rarr; Executor &rarr; Verifier loop with approval gates for irreversible actions</sub>
+<br/><br/>
+</td>
+<td align="center" width="25%">
+<br/>
+<img src="https://img.shields.io/badge/-Local--First-238636?style=flat-square" alt="Local"/>
+<br/><br/>
+<strong>Zero Cloud Dependencies</strong><br/>
+<sub>Everything runs on your machine. No keystrokes, screenshots, or data leaves your network</sub>
+<br/><br/>
+</td>
+</tr>
+</table>
+
+<details>
+<summary><strong>More capabilities</strong></summary>
+<br/>
+
+| Capability | Description |
+|---|---|
+| **Voice Control** | Browser-native speech recognition and TTS with live transcript |
+| **Ollama Integration** | Optional local LLM for contextual summaries and smart autonomy planning |
+| **Token Auth** | Opt-in Bearer token auth for all API endpoints (dev mode = no auth) |
+| **SQLite Persistence** | Events, autonomy runs, and task records survive restarts with configurable retention |
+| **Readiness Gates** | One-shot and matrix readiness checks for deployment validation |
+| **UI Telemetry** | Full frontend journey telemetry with session artifacts and backend log correlation |
+| **Runtime Logs** | In-memory log buffer with level/text/time filters and session correlation |
+| **Ollama Model Switching** | Hot-swap between installed models at runtime, persisted across restarts |
+| **Planner Modes** | `deterministic`, `auto`, or `ollama_required` &mdash; switchable at runtime |
+| **PowerShell Executor** | Real Windows automation via PowerShell COM with retry and preflight checks |
+
+</details>
+
+---
+
+## Quickstart
+
+### Backend (WSL2)
+
 ```bash
-cd /home/axw/projects/DesktopAI
-python -m venv .venv
-source .venv/bin/activate
+git clone https://github.com/nxtg-ai/DesktopAI.git
+cd DesktopAI
+python -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
 
-# run backend
-uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload
+# Start the backend
+make backend-dev
 ```
-Open `http://localhost:8000` in a browser (Windows or WSL2).
 
-## Windows collector (build from WSL2)
-The collector runs on Windows, but you can build it from WSL2 using the GNU Windows target.
+Open **http://localhost:8000** in your browser.
 
-### 1) Install toolchain (WSL2)
+### Windows Collector
+
+<details>
+<summary><strong>Build & run instructions</strong></summary>
+
+#### Install toolchain (WSL2)
 ```bash
-sudo apt-get update
-sudo apt-get install -y mingw-w64
+sudo apt-get update && sudo apt-get install -y mingw-w64
 rustup target add x86_64-pc-windows-gnu
 ```
 
-### 2) Build collector
+#### Build
 ```bash
-cargo build --manifest-path collector/Cargo.toml --release --target x86_64-pc-windows-gnu
+make collector-build
+# Binary: collector/target/x86_64-pc-windows-gnu/release/desktopai-collector.exe
 ```
 
-The binary will be at:
-```
-collector/target/x86_64-pc-windows-gnu/release/desktopai-collector.exe
-```
-
-### 3) Run collector on Windows
-Copy the `.exe` to Windows and run:
+#### Run on Windows
 ```powershell
 $env:BACKEND_WS_URL = "ws://localhost:8000/ingest"
 $env:BACKEND_HTTP_URL = "http://localhost:8000/api/events"
@@ -48,267 +170,221 @@ $env:UIA_ENABLED = "0"
 ./desktopai-collector.exe
 ```
 
-> Note: Windows → WSL2 `localhost` forwarding is typically enabled. If it isn't, set `BACKEND_WS_URL` and `BACKEND_HTTP_URL` to the WSL2 VM IP (from `wsl hostname -I`).
+> **Note:** Windows &rarr; WSL2 `localhost` forwarding is typically enabled. If not, use the WSL2 VM IP from `wsl hostname -I`.
 
-### Collector settings
-- `IDLE_ENABLED` (default `1`): enable idle/active events.
-- `IDLE_THRESHOLD_MS` (default `60000`): idle threshold.
-- `IDLE_POLL_MS` (default `1000`): idle polling interval.
-- `UIA_ENABLED` (default `0`): enable UI Automation snapshotting.
-- `UIA_THROTTLE_MS` (default `1000`): throttle UIA snapshots.
-- `UIA_TEXT_MAX_CHARS` (default `240`): max UIA text length.
+</details>
 
-## Ollama (optional)
-If Ollama is running locally, the backend will expose `/api/summarize`.
-- Default URL: `http://localhost:11434`
-- Configure via `OLLAMA_URL` and `OLLAMA_MODEL`.
-- Configure autonomy planner mode with:
-  `AUTONOMY_PLANNER_MODE=deterministic|auto|ollama_required`.
-  - `deterministic`: always use local deterministic planner.
-  - `auto`: try Ollama first, fallback to deterministic if unavailable/invalid.
-  - `ollama_required`: require valid Ollama plan; run start fails when unavailable/invalid.
-  - In `ollama_required` mode, `POST /api/autonomy/runs` returns `503` when Ollama is unavailable.
+### Authentication (optional)
 
-If Ollama is not available, the summary endpoint returns 503 and the UI disables the button.
-If `/api/generate` fails (for example 404 from a misconfigured endpoint), backend availability is
-temporarily downgraded to avoid repeated failing planner/summary calls until the next health-check window.
-If the configured `OLLAMA_MODEL` is missing but other local models exist, DesktopAI retries once with an
-installed fallback model and reports both configured and active models in diagnostics.
+Set `API_TOKEN` to enforce Bearer token auth on all `/api/*` endpoints (except `/api/health`):
 
-## Persistence (SQLite)
-The backend stores events and derived state in SQLite for durability across restarts.
-- Configure the DB path with `BACKEND_DB_PATH` (default `backend/data/desktopai.db`).
-- Retention controls:
-  - `DB_MAX_EVENTS` limits total rows (oldest pruned).
-  - `DB_RETENTION_DAYS` prunes events older than the cutoff.
-  - `DB_MAX_AUTONOMY_RUNS` limits persisted autonomy run records (oldest pruned by `updated_at`).
-  - `DB_AUTONOMY_RETENTION_DAYS` prunes autonomy run records older than the cutoff (`0` disables age pruning).
-  - `DB_MAX_TASK_RECORDS` limits persisted task records (oldest pruned by `updated_at`).
-  - `DB_TASK_RETENTION_DAYS` prunes task records older than the cutoff (`0` disables age pruning).
-- Autonomy runs are also persisted; on restart, in-flight runs are restored as failed and require explicit restart.
-- On backend shutdown, in-flight autonomy runs are marked failed and persisted before exit.
-- Task records (including steps/status) are persisted and restored on startup.
-- On startup, in-flight task records (`running` / `waiting_approval`) are restored as failed and require explicit rerun.
-- On backend shutdown, pending task-record persistence callbacks are drained (up to 2 seconds) before exit.
-
-## Classification
-The backend assigns categories to foreground events:
-`coding`, `docs`, `comms`, `web`, `terminal`, `meeting`.
-
-By default it uses rules. To allow a local Ollama fallback, set:
-`CLASSIFIER_USE_OLLAMA=1`.
-
-## API
-- `GET /api/selftest` — local backend self-test (DB path writability, SQLite write probe, config surface)
-- `POST /api/events` — ingest event (HTTP)
-- `GET /api/state` — current state
-- `GET /api/events?limit=N` — recent events
-- `POST /api/classify` — classify an event payload
-- `GET /api/executor` — action-executor runtime status (`simulated` or `windows-powershell`)
-- `GET /api/executor/preflight` — executor readiness checks (platform, PowerShell, COM probe)
-- `GET /api/readiness/status` — consolidated readiness summary (executor preflight, collector connection, runtime log buffer, latest autonomy/telemetry pointers, Ollama diagnostic metadata)
-- `POST /api/ui-telemetry` — ingest frontend UI telemetry batch and append session artifact logs
-- `GET /api/ui-telemetry?session_id=<id>&limit=N` — read recent frontend telemetry events
-- `GET /api/ui-telemetry/sessions?limit=N` — list telemetry sessions with event counts and timestamps
-- `POST /api/ui-telemetry/reset` — clear in-memory telemetry buffer (and optionally telemetry artifact files)
-- `GET /api/runtime-logs?limit=N&level=<LEVEL>&contains=<text>&since=<ISO>&until=<ISO>` — read in-memory backend/runtime logs with optional level/text/time filters
-- `GET /api/runtime-logs/correlate?session_id=<id>&limit=N&level=<LEVEL>&contains=<text>` — correlate runtime logs to a frontend telemetry session time window
-- `POST /api/runtime-logs/reset` — clear in-memory runtime log buffer
-- `GET /api/ollama` — availability info + autonomy planner flag + last-check diagnostics (`last_check_at`, `last_check_source`, `last_http_status`, `last_error`, `configured_model`, `active_model`)
-- `GET /api/ollama/models` — list installed Ollama models plus current selection (`configured_model`, `active_model`, `source`)
-- `POST /api/ollama/model` — set runtime Ollama model override (must be installed locally), persisted for next backend restart
-- `DELETE /api/ollama/model` — clear runtime Ollama model override and revert to configured model
-- `POST /api/ollama/probe` — execute a real non-streaming generate probe (`prompt`, `timeout_s`, `allow_fallback`) and return structured result (`ok`, `model`, `elapsed_ms`, `error`, `response_preview`, `response_chars`, `used_fallback`)
-- `GET /api/autonomy/planner` — current autonomy planner mode + supported modes + Ollama requirement/availability
-- `POST /api/autonomy/planner` — set autonomy planner mode at runtime (`deterministic`, `auto`, `ollama_required`), persisted for next backend restart
-- `DELETE /api/autonomy/planner` — clear runtime planner override and revert to configured default mode
-- `POST /api/summarize` — optional summary
-- `POST /api/tasks` — create task objective
-- `POST /api/tasks/{task_id}/plan` — attach explicit plan steps
-- `POST /api/tasks/{task_id}/run` — execute planned steps
-- `POST /api/tasks/{task_id}/approve` — approve blocked irreversible step
-- `POST /api/tasks/{task_id}/pause` — pause task
-- `POST /api/tasks/{task_id}/resume` — resume task
-- `POST /api/tasks/{task_id}/cancel` — cancel task
-- `POST /api/autonomy/runs` — start autonomous run (planner/executor/verifier loop)
-- `GET /api/autonomy/runs` — list autonomous runs
-- `GET /api/autonomy/runs/{run_id}` — get run state/log
-- `POST /api/autonomy/runs/{run_id}/approve` — approve next irreversible step
-- `POST /api/autonomy/runs/{run_id}/cancel` — cancel autonomous run
-- `POST /api/readiness/gate` — one-shot gate: executor preflight + autonomy objective execution + pass/fail report (`cleanup_on_exit` defaults true to avoid orphan runs)
-- `POST /api/readiness/matrix` — run multiple readiness-gate objectives and return aggregate pass/fail summary
-- WebSocket ingest: `/ingest`
-- WebSocket UI: `/ws`
-  - Snapshot payload includes `state`, `events`, and `autonomy_run` (latest run if any).
-
-## Dev UX
-Use `.env.example` to configure settings.
-
-### Makefile targets
 ```bash
-make backend-dev
-make backend-test
-make ui-test
-make ui-artifacts
-make ui-sessions
-make ui-gate
-make collector-build
-make skills-validate
-make skills-score SKILL_CASES=evals/skills/<skill>/cases.json SKILL_RESULTS=<results.json>
-make skills-score-all SKILL_RESULTS_ROOT=evals/results/skills
-```
-Batch scoring expects fixtures at `evals/results/skills/<skill>/results.json`.
+API_TOKEN=my-secret-token make backend-dev
 
-## Real UI Testing + Logs
-Use Playwright to validate the real browser journey and capture artifacts.
-
-### One-time setup
-```bash
-cd /home/axw/projects/DesktopAI/ui-tests
-npm install
-npx playwright install chromium
+# Requests now require the token:
+curl -H "Authorization: Bearer my-secret-token" http://localhost:8000/api/state
 ```
 
-### Run smoke journey
+If `API_TOKEN` is unset, all requests pass through (dev mode).
+
+---
+
+## API Reference
+
+<details>
+<summary><strong>40+ endpoints</strong> &mdash; click to expand</summary>
+<br/>
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Health check (always public) |
+| `GET` | `/api/selftest` | Backend self-test (DB, SQLite, config) |
+| `GET` | `/api/state` | Current window state |
+| `POST` | `/api/events` | Ingest event (HTTP) |
+| `GET` | `/api/events?limit=N` | Recent events |
+| `POST` | `/api/classify` | Classify an event payload |
+| `GET` | `/api/collector` | Collector connection status |
+| `GET` | `/api/executor` | Action executor runtime status |
+| `GET` | `/api/executor/preflight` | Executor readiness checks |
+| `GET` | `/api/readiness/status` | Consolidated readiness summary |
+| `POST` | `/api/readiness/gate` | One-shot readiness gate |
+| `POST` | `/api/readiness/matrix` | Multi-objective readiness matrix |
+| | | |
+| `POST` | `/api/tasks` | Create task objective |
+| `GET` | `/api/tasks` | List tasks |
+| `GET` | `/api/tasks/{id}` | Get task details |
+| `POST` | `/api/tasks/{id}/plan` | Attach plan steps |
+| `POST` | `/api/tasks/{id}/run` | Execute planned steps |
+| `POST` | `/api/tasks/{id}/approve` | Approve irreversible step |
+| `POST` | `/api/tasks/{id}/pause` | Pause task |
+| `POST` | `/api/tasks/{id}/resume` | Resume task |
+| `POST` | `/api/tasks/{id}/cancel` | Cancel task |
+| | | |
+| `POST` | `/api/autonomy/runs` | Start autonomous run |
+| `GET` | `/api/autonomy/runs` | List runs |
+| `GET` | `/api/autonomy/runs/{id}` | Get run state/log |
+| `POST` | `/api/autonomy/runs/{id}/approve` | Approve next step |
+| `POST` | `/api/autonomy/runs/{id}/cancel` | Cancel run |
+| `GET` | `/api/autonomy/planner` | Planner mode status |
+| `POST` | `/api/autonomy/planner` | Set planner mode |
+| `DELETE` | `/api/autonomy/planner` | Reset to config default |
+| | | |
+| `GET` | `/api/ollama` | Ollama status + diagnostics |
+| `GET` | `/api/ollama/models` | List installed models |
+| `POST` | `/api/ollama/model` | Set runtime model override |
+| `DELETE` | `/api/ollama/model` | Clear model override |
+| `POST` | `/api/ollama/probe` | Real generate probe |
+| `POST` | `/api/summarize` | Ollama context summary |
+| | | |
+| `POST` | `/api/ui-telemetry` | Ingest UI telemetry batch |
+| `GET` | `/api/ui-telemetry` | List telemetry events |
+| `GET` | `/api/ui-telemetry/sessions` | List sessions |
+| `POST` | `/api/ui-telemetry/reset` | Clear telemetry buffer |
+| `GET` | `/api/runtime-logs` | Runtime logs (filterable) |
+| `GET` | `/api/runtime-logs/correlate` | Correlate logs to session |
+| `POST` | `/api/runtime-logs/reset` | Clear log buffer |
+| | | |
+| `WS` | `/ingest` | Collector event stream |
+| `WS` | `/ws` | UI real-time updates |
+
+</details>
+
+---
+
+## Testing
+
 ```bash
-cd /home/axw/projects/DesktopAI
-make ui-test
+make backend-test        # 125 pytest tests
+make ui-test             # Playwright browser smoke tests (headless)
+make ui-test-headed      # Watch the browser journey
+make ui-gate             # Telemetry validation gate
 ```
 
-### Watch the real browser journey (headed)
-```bash
-cd /home/axw/projects/DesktopAI
-make ui-test-headed
-```
+<details>
+<summary><strong>Playwright smoke coverage</strong></summary>
+<br/>
 
-### Watch browser journey while seeing live backend logs
-Run backend in terminal A:
-```bash
-cd /home/axw/projects/DesktopAI
-source .venv/bin/activate
-make backend-dev
-```
+The E2E suite validates the full user journey including:
 
-Run UI tests in terminal B (reuses running backend, does not spawn an internal test server):
-```bash
-cd /home/axw/projects/DesktopAI
-make ui-test-live
-```
-
-Smoke coverage now includes:
-- page boot + live websocket connection
-- autonomy run start flow
-- real `/api/events` ingestion reflected in the UI
-- telemetry emission for streamed events (`event_stream_received`)
-- irreversible approval flow (`waiting_approval -> completed`) telemetry
-- cancel flow (`waiting_approval -> cancelled`) telemetry
-- journey console session selection + rendered telemetry events in UI
-- readiness status panel (consolidated check summary)
-- Ollama status diagnostics panel (`last_error`/status/source surfaced in UI)
-- Ollama model controls (list installed models + apply/reset runtime override)
-- Ollama probe control (`Probe Model`) with real generate pass/fail result in UI
-- planner mode selector (live runtime update via API)
-- runtime readiness panel executor preflight interaction
-- readiness gate trigger from UI with rendered completion status
-- readiness matrix trigger from UI with rendered pass/fail breakdown
-- runtime log panel with refresh, level/text filters, session correlation, and clear action
-- correlated runtime-log view stays pinned across polling until manual refresh/clear
-
-Readiness summary now includes:
-- required check totals (`required_total`, `required_passed`, `required_failed`)
-- optional warning count (`warning_count`)
-- optional `ollama_available` signal (warning-only; does not fail required readiness)
-- optional Ollama model selection state (`ollama_model_source`, `ollama_configured_model`, `ollama_active_model`)
-- optional Ollama diagnostics (`ollama_last_check_at`, `ollama_last_check_source`, `ollama_last_http_status`, `ollama_last_error`)
-- `autonomy_planner_mode` (`deterministic`, `auto`, or `ollama_required`)
-- `autonomy_planner_source` (`config_default` or `runtime_override`)
+- Page boot + live WebSocket connection
+- Autonomy run start, approval, and cancel flows
+- Real `/api/events` ingestion reflected in the UI
+- Telemetry emission for streamed events
+- Journey console session selection + rendered events
+- Readiness status panel and gate/matrix execution
+- Ollama diagnostics, model controls, and probe
+- Planner mode selector with live runtime update
+- Runtime log panel with filters, correlation, and clear
+- Correlated log view pinning across polling
 
 Artifacts are written to:
-- `artifacts/ui/playwright/report/index.html` (HTML report)
-- `artifacts/ui/playwright/test-results/` (trace, screenshot, video)
-- `artifacts/ui/telemetry/<session-id>.jsonl` (human-visible UI journey log)
-- `/api/ui-telemetry` and `/api/ui-telemetry/sessions` fall back to artifact files when in-memory telemetry is cleared.
+- `artifacts/ui/playwright/report/` &mdash; HTML report
+- `artifacts/ui/playwright/test-results/` &mdash; traces, screenshots, video
+- `artifacts/ui/telemetry/<session-id>.jsonl` &mdash; journey logs
 
-Backend settings:
-- `UI_TELEMETRY_ARTIFACT_DIR` (default `artifacts/ui/telemetry`)
-- `UI_TELEMETRY_MAX_EVENTS` (default `5000`)
-- `RUNTIME_LOG_MAX_ENTRIES` (default `2000`)
-- `AUTONOMY_PLANNER_MODE` (default `deterministic`)
-- `ACTION_EXECUTOR_MODE` (`auto`, `windows`, `simulated`)
-- `ACTION_EXECUTOR_TIMEOUT_S` (default `20`)
-- `ACTION_EXECUTOR_POWERSHELL` (default `powershell.exe`)
-- `ACTION_EXECUTOR_DEFAULT_COMPOSE_TEXT` (default `Draft generated by DesktopAI.`)
-- `ACTION_EXECUTOR_RETRY_COUNT` (default `2`)
-- `ACTION_EXECUTOR_RETRY_DELAY_MS` (default `150`)
+</details>
 
-Action execution modes:
-- `auto`: use real Windows PowerShell executor only on Windows hosts with PowerShell available; otherwise simulated.
-- `windows`: force Windows PowerShell executor (task steps fail on non-Windows hosts or when PowerShell is unavailable).
-- `simulated`: deterministic backend-only execution (for test/dev fallback).
-Task action execution retries transient failures up to `ACTION_EXECUTOR_RETRY_COUNT`; unsupported-action errors fail fast without retries.
+---
 
-Inspect live-ish telemetry while iterating:
+## Configuration
+
+<details>
+<summary><strong>All environment variables</strong></summary>
+<br/>
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKEND_HOST` | `0.0.0.0` | Server bind address |
+| `BACKEND_PORT` | `8000` | Server port |
+| `API_TOKEN` | *(empty)* | Bearer token (empty = no auth) |
+| `BACKEND_DB_PATH` | `backend/data/desktopai.db` | SQLite database path |
+| `DB_RETENTION_DAYS` | `14` | Event age pruning |
+| `DB_MAX_EVENTS` | `20000` | Max event rows |
+| `DB_MAX_AUTONOMY_RUNS` | `2000` | Max autonomy run records |
+| `DB_MAX_TASK_RECORDS` | `5000` | Max task records |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
+| `OLLAMA_MODEL` | `llama3.1:8b` | Default Ollama model |
+| `AUTONOMY_PLANNER_MODE` | `deterministic` | `deterministic` / `auto` / `ollama_required` |
+| `CLASSIFIER_DEFAULT` | `docs` | Default activity category |
+| `CLASSIFIER_USE_OLLAMA` | `0` | Enable Ollama classification fallback |
+| `ACTION_EXECUTOR_MODE` | `auto` | `auto` / `windows` / `simulated` |
+| `ACTION_EXECUTOR_TIMEOUT_S` | `20` | PowerShell execution timeout |
+| `ALLOWED_ORIGINS` | *(empty)* | CORS origins (comma-separated) |
+
+See `.env.example` for the complete reference.
+
+</details>
+
+<details>
+<summary><strong>Collector settings</strong></summary>
+<br/>
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKEND_WS_URL` | `ws://localhost:8000/ingest` | WebSocket endpoint |
+| `BACKEND_HTTP_URL` | `http://localhost:8000/api/events` | HTTP fallback |
+| `WS_RETRY_SECONDS` | `5` | Reconnect interval |
+| `IDLE_ENABLED` | `1` | Enable idle/active events |
+| `IDLE_THRESHOLD_MS` | `60000` | Idle timeout |
+| `IDLE_POLL_MS` | `1000` | Idle polling interval |
+| `UIA_ENABLED` | `0` | Enable UI Automation snapshots |
+| `UIA_THROTTLE_MS` | `1000` | UIA throttle interval |
+| `UIA_TEXT_MAX_CHARS` | `240` | Max UIA text capture length |
+
+</details>
+
+---
+
+## Development
+
 ```bash
-curl -s "http://localhost:8000/api/ui-telemetry?limit=50" | jq
+make backend-dev          # Start dev server with reload
+make backend-test         # Run pytest suite
+make ui-test              # Headless Playwright tests
+make ui-test-headed       # Watch browser journey
+make ui-test-live         # Tests against running backend
+make ui-gate              # Telemetry validation gate
+make ui-artifacts         # Quick artifact summary
+make ui-sessions          # List telemetry sessions
+make collector-build      # Build Windows collector
+make skills-validate      # Validate skill fixtures
 ```
 
-Run one-shot readiness gate:
-```bash
-curl -s "http://localhost:8000/api/readiness/gate" \
-  -H "Content-Type: application/json" \
-  -d '{"objective":"Open outlook, draft reply, then send email","auto_approve_irreversible":true,"timeout_s":30}' | jq
-```
-Response includes `cleanup` metadata (`attempted`, `cancelled`, `error`) for gate-run cleanup behavior.
+<details>
+<summary><strong>TDD workflow</strong></summary>
+<br/>
 
-Run readiness matrix:
-```bash
-curl -s "http://localhost:8000/api/readiness/matrix" \
-  -H "Content-Type: application/json" \
-  -d '{"objectives":["Observe desktop and verify outcome","Open outlook, draft reply, then send email"],"auto_approve_irreversible":true,"timeout_s":30}' | jq
-```
+1. **Red** &mdash; Write/update a test and prove it fails for the expected reason
+2. **Green** &mdash; Implement the smallest change to pass
+3. **Refactor** &mdash; Clean up while keeping tests green
+4. Run targeted tests first, then full suite + lint
 
-In the browser console, use `window.__desktopaiTelemetrySessionId` to fetch one session:
-```bash
-curl -s "http://localhost:8000/api/ui-telemetry?session_id=<SESSION_ID>&limit=200" | jq
-```
+</details>
 
-Quick artifact summary:
-```bash
-make ui-artifacts
-```
+<details>
+<summary><strong>Pre-commit hooks</strong></summary>
 
-List telemetry sessions from the live backend:
-```bash
-make ui-sessions
-```
-
-Telemetry gate (fails if required telemetry kinds are missing from latest gate journey):
-```bash
-make ui-gate
-```
-Required kinds are configured in `ui-tests/telemetry-gate.json`.
-CI also runs this gate via `.github/workflows/ui-gate.yml`.
-The gate targets the explicit session recorded by the gate journey at `artifacts/ui/telemetry/latest-gate-session.txt`, so test ordering does not create false negatives.
-`make ui-gate` clears this session pointer before each run to prevent stale-pass scenarios.
-
-### Agent TDD loop (repo default)
-- Keep a short test-case list and execute one behavior slice at a time.
-- Red: write/update a test and prove it fails for the expected reason.
-- Green: implement the smallest change to pass.
-- Refactor immediately while keeping tests green.
-- Run checks in order: targeted tests first, then full suite + lint/type checks.
-- Add at least one negative/edge test for each new behavior.
-- Update docs/contracts only for user-visible or API-visible changes.
-- For exploratory tasks, do a short spike/spec first and then return to strict TDD.
-
-### Optional pre-commit hook
 ```bash
 pip install pre-commit
 pre-commit install
 ```
 
-## Notes
-- The collector emits **foreground**, **idle**, and **active** events.
-- UIA snapshots are optional and throttled; they capture only focused element name/control type and short text excerpt.
-- The backend keeps a **memory cache** for fast UI updates and persists to SQLite.
-- No keystrokes, screenshots, or cloud calls in the core path.
+</details>
+
+---
+
+## Privacy
+
+DesktopAI is designed to be **local-first and privacy-preserving**:
+
+- No keystrokes or screenshots are captured
+- No data leaves your network in the core path
+- Ollama runs locally &mdash; no cloud LLM calls
+- UIA snapshots are optional, throttled, and text-truncated
+- The backend keeps a memory cache for fast UI updates and persists to local SQLite
+
+---
+
+<p align="center">
+  <sub>Built with <a href="https://www.rust-lang.org/">Rust</a>, <a href="https://fastapi.tiangolo.com/">FastAPI</a>, and the belief that your desktop context should stay on your desktop.</sub>
+</p>

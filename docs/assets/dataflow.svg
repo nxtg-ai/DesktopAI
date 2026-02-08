@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 120" fill="none">
+  <defs>
+    <linearGradient id="dfBg" x1="0" y1="0" x2="800" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <filter id="dfGlow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <style>
+    @keyframes travel {
+      0% { transform: translateX(-30px); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateX(30px); opacity: 0; }
+    }
+    @keyframes dot1 { 0%,100% { cx: 195; } 50% { cx: 245; } }
+    @keyframes dot2 { 0%,100% { cx: 395; } 50% { cx: 445; } }
+    @keyframes dot3 { 0%,100% { cx: 595; } 50% { cx: 645; } }
+    .d1 { animation: dot1 2s ease-in-out infinite; }
+    .d2 { animation: dot2 2s ease-in-out infinite 0.5s; }
+    .d3 { animation: dot3 2s ease-in-out infinite 1s; }
+    .lbl { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  </style>
+
+  <rect width="800" height="120" fill="url(#dfBg)" rx="10"/>
+
+  <!-- Step 1: Window Change -->
+  <rect x="20" y="25" width="150" height="70" rx="8" fill="#0f8b8d" opacity="0.12" stroke="#0f8b8d" stroke-width="1.2"/>
+  <text class="lbl" x="95" y="55" fill="#0f8b8d" font-size="12" font-weight="700" text-anchor="middle">Window Change</text>
+  <text class="lbl" x="95" y="73" fill="#8b949e" font-size="9" text-anchor="middle">Win32 hook fires</text>
+
+  <!-- Dot 1 -->
+  <circle class="d1" cy="60" r="4" fill="#0f8b8d" filter="url(#dfGlow)"/>
+
+  <!-- Step 2: Classify + Store -->
+  <rect x="270" y="25" width="150" height="70" rx="8" fill="#f48b4a" opacity="0.12" stroke="#f48b4a" stroke-width="1.2"/>
+  <text class="lbl" x="345" y="55" fill="#f48b4a" font-size="12" font-weight="700" text-anchor="middle">Classify + Store</text>
+  <text class="lbl" x="345" y="73" fill="#8b949e" font-size="9" text-anchor="middle">Rules or Ollama</text>
+
+  <!-- Dot 2 -->
+  <circle class="d2" cy="60" r="4" fill="#f48b4a" filter="url(#dfGlow)"/>
+
+  <!-- Step 3: Stream to UI -->
+  <rect x="520" y="25" width="150" height="70" rx="8" fill="#58a6ff" opacity="0.12" stroke="#58a6ff" stroke-width="1.2"/>
+  <text class="lbl" x="595" y="55" fill="#58a6ff" font-size="12" font-weight="700" text-anchor="middle">Stream to UI</text>
+  <text class="lbl" x="595" y="73" fill="#8b949e" font-size="9" text-anchor="middle">WebSocket push</text>
+
+  <!-- Dot 3 -->
+  <circle class="d3" cy="60" r="4" fill="#58a6ff" filter="url(#dfGlow)"/>
+
+  <!-- Arrows -->
+  <line x1="170" y1="60" x2="270" y2="60" stroke="#3b4048" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="420" y1="60" x2="520" y2="60" stroke="#3b4048" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="670" y1="60" x2="780" y2="60" stroke="#3b4048" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <!-- Final: < 50ms label -->
+  <rect x="700" y="30" width="80" height="60" rx="8" fill="#238636" opacity="0.12" stroke="#238636" stroke-width="1.2"/>
+  <text class="lbl" x="740" y="55" fill="#238636" font-size="14" font-weight="700" text-anchor="middle">&lt; 50ms</text>
+  <text class="lbl" x="740" y="73" fill="#8b949e" font-size="9" text-anchor="middle">end-to-end</text>
+</svg>

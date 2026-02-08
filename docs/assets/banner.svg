@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="400" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f8b8d"/>
+      <stop offset="100%" stop-color="#f48b4a"/>
+    </linearGradient>
+    <linearGradient id="glow1" x1="0" y1="0" x2="600" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f8b8d" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="transparent" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="glow2" x1="600" y1="0" x2="1200" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f48b4a" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="transparent" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="blur1">
+      <feGaussianBlur stdDeviation="60"/>
+    </filter>
+    <filter id="blur2">
+      <feGaussianBlur stdDeviation="40"/>
+    </filter>
+    <filter id="textglow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <style>
+    @keyframes float1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(30px,-20px); } }
+    @keyframes float2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-20px,15px); } }
+    @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+    @keyframes dash { to { stroke-dashoffset: 0; } }
+    @keyframes fadeSlide { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
+    .orb1 { animation: float1 8s ease-in-out infinite; }
+    .orb2 { animation: float2 10s ease-in-out infinite; }
+    .connector { stroke-dasharray: 8 4; stroke-dashoffset: 48; animation: dash 3s linear infinite; }
+    .pulse { animation: pulse 3s ease-in-out infinite; }
+    .title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  </style>
+
+  <!-- Background -->
+  <rect width="1200" height="320" fill="url(#bg)" rx="16"/>
+
+  <!-- Ambient orbs -->
+  <circle class="orb1" cx="200" cy="160" r="180" fill="url(#glow1)" filter="url(#blur1)"/>
+  <circle class="orb2" cx="950" cy="140" r="160" fill="url(#glow2)" filter="url(#blur1)"/>
+
+  <!-- Grid lines -->
+  <g opacity="0.06" stroke="#58a6ff" stroke-width="0.5">
+    <line x1="100" y1="0" x2="100" y2="320"/>
+    <line x1="300" y1="0" x2="300" y2="320"/>
+    <line x1="500" y1="0" x2="500" y2="320"/>
+    <line x1="700" y1="0" x2="700" y2="320"/>
+    <line x1="900" y1="0" x2="900" y2="320"/>
+    <line x1="1100" y1="0" x2="1100" y2="320"/>
+    <line x1="0" y1="80" x2="1200" y2="80"/>
+    <line x1="0" y1="160" x2="1200" y2="160"/>
+    <line x1="0" y1="240" x2="1200" y2="240"/>
+  </g>
+
+  <!-- Animated data flow lines -->
+  <g class="connector" stroke="#0f8b8d" stroke-width="1.5" opacity="0.4" fill="none">
+    <path d="M 150 200 Q 350 120, 550 180 T 950 150"/>
+  </g>
+  <g class="connector" stroke="#f48b4a" stroke-width="1" opacity="0.3" fill="none" style="animation-delay: 1.5s">
+    <path d="M 200 250 Q 400 180, 600 220 T 1000 190"/>
+  </g>
+
+  <!-- Monitor icon -->
+  <g transform="translate(120, 100)" opacity="0.9">
+    <rect x="0" y="0" width="80" height="56" rx="6" fill="none" stroke="#0f8b8d" stroke-width="2"/>
+    <rect x="8" y="8" width="64" height="36" rx="2" fill="#0f8b8d" opacity="0.15"/>
+    <line x1="40" y1="56" x2="40" y2="70" stroke="#0f8b8d" stroke-width="2"/>
+    <line x1="24" y1="70" x2="56" y2="70" stroke="#0f8b8d" stroke-width="2" stroke-linecap="round"/>
+    <!-- Window bars -->
+    <rect x="12" y="14" width="28" height="3" rx="1" fill="#0f8b8d" opacity="0.5"/>
+    <rect x="12" y="21" width="40" height="3" rx="1" fill="#f48b4a" opacity="0.5"/>
+    <rect x="12" y="28" width="20" height="3" rx="1" fill="#0f8b8d" opacity="0.3"/>
+    <!-- Pulse dot -->
+    <circle class="pulse" cx="68" cy="4" r="4" fill="#f48b4a"/>
+  </g>
+
+  <!-- Title text -->
+  <text class="title" x="260" y="130" fill="white" font-size="56" font-weight="700" filter="url(#textglow)">
+    Desktop<tspan fill="url(#accent)">AI</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text class="title" x="260" y="168" fill="#8b949e" font-size="20" font-weight="400">
+    Intelligent desktop assistant that watches, learns, and acts.
+  </text>
+
+  <!-- Feature pills -->
+  <g transform="translate(260, 195)">
+    <rect x="0" y="0" width="120" height="28" rx="14" fill="#0f8b8d" opacity="0.2" stroke="#0f8b8d" stroke-width="1"/>
+    <text class="title" x="60" y="18" fill="#0f8b8d" font-size="12" font-weight="600" text-anchor="middle">Rust Collector</text>
+
+    <rect x="132" y="0" width="130" height="28" rx="14" fill="#f48b4a" opacity="0.2" stroke="#f48b4a" stroke-width="1"/>
+    <text class="title" x="197" y="18" fill="#f48b4a" font-size="12" font-weight="600" text-anchor="middle">FastAPI Backend</text>
+
+    <rect x="274" y="0" width="100" height="28" rx="14" fill="#58a6ff" opacity="0.2" stroke="#58a6ff" stroke-width="1"/>
+    <text class="title" x="324" y="18" fill="#58a6ff" font-size="12" font-weight="600" text-anchor="middle">Live Web UI</text>
+
+    <rect x="386" y="0" width="120" height="28" rx="14" fill="#7c3aed" opacity="0.2" stroke="#7c3aed" stroke-width="1"/>
+    <text class="title" x="446" y="18" fill="#7c3aed" font-size="12" font-weight="600" text-anchor="middle">Autonomy Loop</text>
+  </g>
+
+  <!-- Bottom accent line -->
+  <rect x="260" y="245" width="680" height="2" rx="1" fill="url(#accent)" opacity="0.3"/>
+
+  <!-- Stats -->
+  <g class="title" transform="translate(260, 270)">
+    <text fill="#8b949e" font-size="13">
+      <tspan fill="#e6edf3" font-weight="600">40+</tspan> API endpoints
+      <tspan dx="20" fill="#e6edf3" font-weight="600">125</tspan> tests
+      <tspan dx="20" fill="#e6edf3" font-weight="600">0</tspan> cloud dependencies
+      <tspan dx="20" fill="#e6edf3" font-weight="600">100%</tspan> local-first
+    </text>
+  </g>
+</svg>
