@@ -14,3 +14,12 @@ artifacts/
 ui-tests/node_modules/
 ui-tests/playwright-report/
 ui-tests/test-results/
+
+# Archived/external projects
+DesktopAI.v2.R2/
+
+# Research and reference materials
+.asif/
+
+# External tool configs
+.codex/
