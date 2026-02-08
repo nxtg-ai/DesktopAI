@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "skill": "vision-to-action-pipeline",
+  "cases": [
+    {
+      "id": "trigger_pipeline_design",
+      "prompt": "Design a perception-to-action loop for Outlook triage with verifiable postconditions.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "pipeline stages",
+          "interface contracts",
+          "verification step"
+        ]
+      }
+    },
+    {
+      "id": "trigger_contract_definition",
+      "prompt": "Define payload schemas between grounding, planning, and execution layers.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "typed contracts",
+          "preconditions and postconditions",
+          "versioning"
+        ]
+      }
+    },
+    {
+      "id": "trigger_failure_policy",
+      "prompt": "Propose a retry and abort policy for ambiguous UI target detection.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "failure taxonomy",
+          "bounded retries",
+          "abort escalation"
+        ]
+      }
+    },
+    {
+      "id": "no_trigger_simple_rename",
+      "prompt": "Rename a helper function and update imports.",
+      "expected": {
+        "should_trigger": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "skill": "repo-intake",
+  "results": [
+    {
+      "id": "trigger_new_repo_mapping",
+      "should_trigger": true,
+      "response": "Start with a repo map, list likely edit points, and provide verification commands."
+    },
+    {
+      "id": "trigger_unknown_codebase",
+      "should_trigger": true,
+      "response": "Read key docs first, build an inventory layout, and capture constraints."
+    },
+    {
+      "id": "trigger_change_scoping",
+      "should_trigger": true,
+      "response": "Define change surface, identify test targets, and provide a risk list."
+    },
+    {
+      "id": "no_trigger_known_file",
+      "should_trigger": false,
+      "response": "Known-file edit can proceed directly without repo intake."
+    }
+  ]
+}

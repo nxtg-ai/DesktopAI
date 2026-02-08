@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: skills-validate
+        name: skills-validate
+        entry: make skills-validate
+        language: system
+        pass_filenames: false

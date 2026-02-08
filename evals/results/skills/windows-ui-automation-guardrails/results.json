@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "skill": "windows-ui-automation-guardrails",
+  "results": [
+    {
+      "id": "trigger_outlook_macro",
+      "should_trigger": true,
+      "response": "Run a preflight checklist, execute atomic actions, and enforce rollback or abort conditions."
+    },
+    {
+      "id": "trigger_sensitive_action",
+      "should_trigger": true,
+      "response": "Add an irreversible action checkpoint with focus validation and a safety stop."
+    },
+    {
+      "id": "trigger_mixed_env",
+      "should_trigger": true,
+      "response": "Document environment boundary details and explicit execution constraints."
+    },
+    {
+      "id": "no_trigger_backend_only",
+      "should_trigger": false,
+      "response": "Backend-only optimization should not trigger Windows UI automation guardrails."
+    }
+  ]
+}

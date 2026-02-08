@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "skill": "code-review-gate",
+  "results": [
+    {
+      "id": "trigger_pr_readiness",
+      "should_trigger": true,
+      "response": "Use findings first with severity ordering and explicit file references."
+    },
+    {
+      "id": "trigger_regression_audit",
+      "should_trigger": true,
+      "response": "Assess regression risk and call out test coverage gaps before merge."
+    },
+    {
+      "id": "trigger_security_review",
+      "should_trigger": true,
+      "response": "Prioritize security concerns, data safety impacts, and high-impact risks."
+    },
+    {
+      "id": "no_trigger_implement_feature",
+      "should_trigger": false,
+      "response": "This is implementation work, not a review gate."
+    }
+  ]
+}

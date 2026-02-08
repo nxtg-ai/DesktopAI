@@ -1,0 +1,26 @@
+{
+  "version": "3.0.0",
+  "project": {
+    "name": "DesktopAI",
+    "type": "python-rust-hybrid",
+    "vision": "An intelligent desktop assistant that observes user activity and can autonomously execute tasks like drafting emails, managing windows, and automating workflows.",
+    "goals": [
+      "Ship working MVP with real Windows desktop integration",
+      "Real-time responsiveness with low-latency observation and execution"
+    ],
+    "initialized": "2026-02-07T00:00:00Z",
+    "forgeVersion": "3.0.0"
+  },
+  "workstreams": [],
+  "qualityGates": {
+    "testsPass": true,
+    "typesClean": true,
+    "noSecurityIssues": true
+  },
+  "metrics": {
+    "sessionsCompleted": 0,
+    "tasksCompleted": 0,
+    "testsWritten": 0,
+    "featuresCompleted": 0
+  }
+}

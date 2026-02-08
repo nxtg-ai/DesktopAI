@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "skill": "repo-intake",
+  "cases": [
+    {
+      "id": "trigger_new_repo_mapping",
+      "prompt": "I just cloned this project. Map where backend event ingestion lives and how to test it.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "repo map",
+          "likely edit points",
+          "verification commands"
+        ]
+      }
+    },
+    {
+      "id": "trigger_unknown_codebase",
+      "prompt": "Before coding, identify architecture docs, entrypoints, and do-not-touch areas.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "read key docs",
+          "inventory layout",
+          "constraints"
+        ]
+      }
+    },
+    {
+      "id": "trigger_change_scoping",
+      "prompt": "Find the safest files to add websocket retry logic and list risks.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "change surface",
+          "test targets",
+          "risk list"
+        ]
+      }
+    },
+    {
+      "id": "no_trigger_known_file",
+      "prompt": "Edit backend/app/main.py line 85 to rename this variable.",
+      "expected": {
+        "should_trigger": false
+      }
+    }
+  ]
+}

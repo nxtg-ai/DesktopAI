@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "skill": "doc-refresh",
+  "cases": [
+    {
+      "id": "trigger_readme_sync",
+      "prompt": "Update README quickstart to match current backend run commands.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "verified commands",
+          "updated docs only",
+          "consistency with source"
+        ]
+      }
+    },
+    {
+      "id": "trigger_architecture_update",
+      "prompt": "Refresh ARCHITECTURE.md after adding websocket ingest buffering.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "behavior alignment",
+          "affected sections only",
+          "caveats"
+        ]
+      }
+    },
+    {
+      "id": "trigger_onboarding_fix",
+      "prompt": "Bring onboarding docs in sync with current Makefile targets.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "command accuracy",
+          "path accuracy"
+        ]
+      }
+    },
+    {
+      "id": "no_trigger_feature_build",
+      "prompt": "Implement a new classification strategy in backend code.",
+      "expected": {
+        "should_trigger": false
+      }
+    }
+  ]
+}

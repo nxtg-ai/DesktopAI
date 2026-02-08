@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "skill": "doc-refresh",
+  "results": [
+    {
+      "id": "trigger_readme_sync",
+      "should_trigger": true,
+      "response": "Use updated docs only with verified commands and preserve consistency with source."
+    },
+    {
+      "id": "trigger_architecture_update",
+      "should_trigger": true,
+      "response": "Keep behavior alignment, touch affected sections only, and include caveats."
+    },
+    {
+      "id": "trigger_onboarding_fix",
+      "should_trigger": true,
+      "response": "Validate command accuracy and path accuracy before publishing docs."
+    },
+    {
+      "id": "no_trigger_feature_build",
+      "should_trigger": false,
+      "response": "This prompt is for feature implementation, not documentation refresh."
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "skill": "vision-to-action-pipeline",
+  "results": [
+    {
+      "id": "trigger_pipeline_design",
+      "should_trigger": true,
+      "response": "Define pipeline stages with interface contracts and an explicit verification step."
+    },
+    {
+      "id": "trigger_contract_definition",
+      "should_trigger": true,
+      "response": "Specify typed contracts with preconditions and postconditions plus schema versioning."
+    },
+    {
+      "id": "trigger_failure_policy",
+      "should_trigger": true,
+      "response": "Use a failure taxonomy with bounded retries and clear abort escalation."
+    },
+    {
+      "id": "no_trigger_simple_rename",
+      "should_trigger": false,
+      "response": "Simple rename work does not require pipeline design."
+    }
+  ]
+}

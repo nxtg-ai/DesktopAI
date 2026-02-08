@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "skill": "tdd-loop",
+  "results": [
+    {
+      "id": "trigger_bugfix_red_green_refactor",
+      "should_trigger": true,
+      "response": "Write a failing test first, apply the minimal fix, then refactor. Run targeted tests, then full suite checks, and report verification commands."
+    },
+    {
+      "id": "trigger_refactor_with_anti_cheat",
+      "should_trigger": true,
+      "response": "Keep behavior-preserving refactors with test updates, include an edge test, and add risk notes. Do not mock the thing under test."
+    },
+    {
+      "id": "trigger_api_change_with_slicing",
+      "should_trigger": true,
+      "response": "Create a test-case list, execute targeted tests, implement in incremental slices, then run post-change checks."
+    },
+    {
+      "id": "trigger_exploratory_spike_then_tdd",
+      "should_trigger": true,
+      "response": "Start with a short spike to document assumptions and produce a spec, then return to tdd for implementation."
+    },
+    {
+      "id": "no_trigger_docs_only",
+      "should_trigger": false,
+      "response": "Docs-only requests should route to documentation workflows."
+    }
+  ]
+}

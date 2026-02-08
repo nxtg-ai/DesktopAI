@@ -1,0 +1,39 @@
+name: Skills Validate
+
+on:
+  pull_request:
+    paths:
+      - ".agents/skills/**"
+      - "evals/skills/**"
+      - "scripts/validate_skill_assets.py"
+      - "scripts/skill_eval_lib.py"
+      - "scripts/score_skill_evals.py"
+      - "Makefile"
+      - ".github/workflows/skills-validate.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - ".agents/skills/**"
+      - "evals/skills/**"
+      - "scripts/validate_skill_assets.py"
+      - "scripts/skill_eval_lib.py"
+      - "scripts/score_skill_evals.py"
+      - "Makefile"
+      - ".github/workflows/skills-validate.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate skill assets
+        run: make skills-validate

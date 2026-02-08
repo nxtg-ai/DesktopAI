@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "skill": "release-checklist",
+  "cases": [
+    {
+      "id": "trigger_rc_gate",
+      "prompt": "Run release readiness for v0.8.0 and return go/no-go.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "version checks",
+          "changelog checks",
+          "go/no-go"
+        ]
+      }
+    },
+    {
+      "id": "trigger_hotfix_release",
+      "prompt": "Before tagging this hotfix, verify tests, artifacts, and rollback path.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "hotfix scope",
+          "artifact verification",
+          "rollback strategy"
+        ]
+      }
+    },
+    {
+      "id": "trigger_publish_safety",
+      "prompt": "Check if this release candidate is safe to publish with known risks listed.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "blocking issues",
+          "residual risks",
+          "verification commands"
+        ]
+      }
+    },
+    {
+      "id": "no_trigger_feature_dev",
+      "prompt": "Add websocket reconnect backoff logic to the backend.",
+      "expected": {
+        "should_trigger": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "skill": "code-review-gate",
+  "cases": [
+    {
+      "id": "trigger_pr_readiness",
+      "prompt": "Review this diff and list merge blockers by severity with file references.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "findings first",
+          "severity ordering",
+          "file references"
+        ]
+      }
+    },
+    {
+      "id": "trigger_regression_audit",
+      "prompt": "Audit recent changes for behavior regressions and missing tests.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "regression risk",
+          "test coverage gaps"
+        ]
+      }
+    },
+    {
+      "id": "trigger_security_review",
+      "prompt": "Perform a risk-focused review for security and data-loss issues.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "security concerns",
+          "data safety",
+          "high-impact risks"
+        ]
+      }
+    },
+    {
+      "id": "no_trigger_implement_feature",
+      "prompt": "Implement a new classify endpoint and add tests.",
+      "expected": {
+        "should_trigger": false
+      }
+    }
+  ]
+}

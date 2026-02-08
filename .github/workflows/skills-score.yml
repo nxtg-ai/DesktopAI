@@ -1,0 +1,45 @@
+name: Skills Score
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "evals/skills/**"
+      - "evals/results/skills/**"
+      - "scripts/skill_eval_lib.py"
+      - "scripts/score_skill_evals.py"
+      - "scripts/score_all_skill_evals.py"
+      - "scripts/validate_skill_assets.py"
+      - "Makefile"
+      - ".github/workflows/skills-score.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "evals/skills/**"
+      - "evals/results/skills/**"
+      - "scripts/skill_eval_lib.py"
+      - "scripts/score_skill_evals.py"
+      - "scripts/score_all_skill_evals.py"
+      - "scripts/validate_skill_assets.py"
+      - "Makefile"
+      - ".github/workflows/skills-score.yml"
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate skill assets
+        run: make skills-validate
+
+      - name: Score all skill evals
+        run: make skills-score-all

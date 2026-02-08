@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "skill": "tdd-loop",
+  "cases": [
+    {
+      "id": "trigger_bugfix_red_green_refactor",
+      "prompt": "Fix the idle threshold edge case and add tests proving the fix. Use strict TDD.",
+      "expected": {
+        "should_trigger": true,
+        "must_include_ordered": [
+          "failing test",
+          "minimal",
+          "refactor"
+        ],
+        "must_include": [
+          "targeted tests",
+          "full suite",
+          "verification commands"
+        ]
+      }
+    },
+    {
+      "id": "trigger_refactor_with_anti_cheat",
+      "prompt": "Refactor classification rules but keep behavior identical and cover with tests.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "behavior-preserving",
+          "test updates",
+          "edge test",
+          "risk notes"
+        ],
+        "must_include_any": [
+          "do not mock",
+          "no mocks for the thing under test"
+        ],
+        "must_exclude": [
+          "skip refactor"
+        ]
+      }
+    },
+    {
+      "id": "trigger_api_change_with_slicing",
+      "prompt": "Add a new API field and update tests before implementation. Keep changes in tiny behavior slices.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "test-case list",
+          "targeted tests",
+          "incremental",
+          "post-change checks"
+        ]
+      }
+    },
+    {
+      "id": "trigger_exploratory_spike_then_tdd",
+      "prompt": "We are not sure about requirements yet. Explore quickly, then implement safely.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "short spike",
+          "assumptions",
+          "return to tdd"
+        ],
+        "must_include_any": [
+          "spec",
+          "prototype"
+        ]
+      }
+    },
+    {
+      "id": "no_trigger_docs_only",
+      "prompt": "Rewrite the README intro for clarity and formatting.",
+      "expected": {
+        "should_trigger": false
+      }
+    }
+  ]
+}

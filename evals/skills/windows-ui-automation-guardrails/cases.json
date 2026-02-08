@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "skill": "windows-ui-automation-guardrails",
+  "cases": [
+    {
+      "id": "trigger_outlook_macro",
+      "prompt": "Automate Outlook search and draft a reply with rollback if the wrong window is focused.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "preflight checklist",
+          "atomic actions",
+          "rollback or abort conditions"
+        ]
+      }
+    },
+    {
+      "id": "trigger_sensitive_action",
+      "prompt": "Create a UI automation plan that clicks Send only after explicit confirmation.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "irreversible action checkpoint",
+          "focus validation",
+          "safety stop"
+        ]
+      }
+    },
+    {
+      "id": "trigger_mixed_env",
+      "prompt": "Split steps that must run on Windows vs WSL for desktop automation.",
+      "expected": {
+        "should_trigger": true,
+        "must_include": [
+          "environment boundary",
+          "execution constraints"
+        ]
+      }
+    },
+    {
+      "id": "no_trigger_backend_only",
+      "prompt": "Optimize sqlite retention pruning query performance in FastAPI.",
+      "expected": {
+        "should_trigger": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "skill": "release-checklist",
+  "results": [
+    {
+      "id": "trigger_rc_gate",
+      "should_trigger": true,
+      "response": "Run version checks and changelog checks, then return an explicit go/no-go."
+    },
+    {
+      "id": "trigger_hotfix_release",
+      "should_trigger": true,
+      "response": "Confirm hotfix scope, complete artifact verification, and capture rollback strategy."
+    },
+    {
+      "id": "trigger_publish_safety",
+      "should_trigger": true,
+      "response": "List blocking issues, residual risks, and exact verification commands."
+    },
+    {
+      "id": "no_trigger_feature_dev",
+      "should_trigger": false,
+      "response": "This request is feature development, not release readiness."
+    }
+  ]
+}

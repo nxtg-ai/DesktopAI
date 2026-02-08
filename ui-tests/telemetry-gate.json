@@ -1,0 +1,9 @@
+{
+  "required_kinds": [
+    "ui_boot",
+    "ws_open",
+    "event_stream_received",
+    "autonomy_waiting_approval",
+    "autonomy_approved"
+  ]
+}
