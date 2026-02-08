@@ -7,26 +7,69 @@ import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
+from urllib.parse import unquote, urlsplit
 
-from .schemas import WindowEvent
+from .schemas import AutonomyRunRecord, TaskRecord, WindowEvent
 
 SCHEMA_VERSION = 1
 
 
+def _is_memory_path(path: str) -> bool:
+    value = (path or "").strip().lower()
+    return value in {":memory:", "file::memory:"} or value.startswith("file::memory:")
+
+
+def _is_uri_path(path: str) -> bool:
+    return (path or "").strip().lower().startswith("file:")
+
+
+def _filesystem_path_from_uri(path: str) -> Optional[str]:
+    parsed = urlsplit(path)
+    if parsed.scheme != "file":
+        return None
+    raw_path = unquote(parsed.path or "")
+    if not raw_path:
+        return None
+    if raw_path.startswith(":memory:"):
+        return None
+    return raw_path
+
+
 class EventDatabase:
-    def __init__(self, path: str, retention_days: int, max_events: int) -> None:
+    def __init__(
+        self,
+        path: str,
+        retention_days: int,
+        max_events: int,
+        max_autonomy_runs: int = 0,
+        autonomy_retention_days: int = 0,
+        max_task_records: int = 0,
+        task_retention_days: int = 0,
+    ) -> None:
         self._path = path
         self._retention_days = retention_days
         self._max_events = max_events
+        self._max_autonomy_runs = max_autonomy_runs
+        self._autonomy_retention_days = autonomy_retention_days
+        self._max_task_records = max_task_records
+        self._task_retention_days = task_retention_days
         self._lock = threading.Lock()
         self._conn = self._connect()
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        if self._path not in {":memory:", "file::memory:"}:
-            db_path = Path(self._path)
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self._path, check_same_thread=False)
+        db_path = self._path
+        uri_mode = _is_uri_path(db_path)
+
+        if uri_mode:
+            fs_path = _filesystem_path_from_uri(db_path)
+            if fs_path:
+                Path(fs_path).parent.mkdir(parents=True, exist_ok=True)
+        elif not _is_memory_path(db_path):
+            file_path = Path(db_path)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        conn = sqlite3.connect(db_path, check_same_thread=False, uri=uri_mode)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
@@ -66,6 +109,42 @@ class EventDatabase:
             )
             cur.execute(
                 "CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS autonomy_runs (
+                    run_id TEXT PRIMARY KEY,
+                    updated_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_autonomy_runs_updated_at ON autonomy_runs(updated_at)"
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_records (
+                    task_id TEXT PRIMARY KEY,
+                    updated_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_task_records_updated_at ON task_records(updated_at)"
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS runtime_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_runtime_settings_updated_at ON runtime_settings(updated_at)"
             )
             self._conn.commit()
 
@@ -140,7 +219,204 @@ class EventDatabase:
             cur = self._conn.cursor()
             cur.execute("DELETE FROM events")
             cur.execute("DELETE FROM state")
+            cur.execute("DELETE FROM autonomy_runs")
+            cur.execute("DELETE FROM task_records")
+            cur.execute("DELETE FROM runtime_settings")
             self._conn.commit()
+
+    async def set_runtime_setting(self, key: str, value: str) -> None:
+        await asyncio.to_thread(self._set_runtime_setting, key, value)
+
+    def _set_runtime_setting(self, key: str, value: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO runtime_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (key, value, now),
+            )
+            self._conn.commit()
+
+    async def get_runtime_setting(self, key: str) -> Optional[str]:
+        return await asyncio.to_thread(self._get_runtime_setting, key)
+
+    def _get_runtime_setting(self, key: str) -> Optional[str]:
+        with self._lock:
+            cur = self._conn.cursor()
+            row = cur.execute(
+                "SELECT value FROM runtime_settings WHERE key = ?",
+                (key,),
+            ).fetchone()
+            if row is None:
+                return None
+            return str(row["value"])
+
+    async def delete_runtime_setting(self, key: str) -> None:
+        await asyncio.to_thread(self._delete_runtime_setting, key)
+
+    def _delete_runtime_setting(self, key: str) -> None:
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute("DELETE FROM runtime_settings WHERE key = ?", (key,))
+            self._conn.commit()
+
+    async def upsert_autonomy_run(self, run: AutonomyRunRecord) -> None:
+        await asyncio.to_thread(self._upsert_autonomy_run, run)
+
+    def _upsert_autonomy_run(self, run: AutonomyRunRecord) -> None:
+        if hasattr(run, "model_dump"):
+            payload = run.model_dump(mode="json")
+        else:
+            payload = run.dict()
+        updated_at = payload.get("updated_at") or datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO autonomy_runs (run_id, updated_at, payload_json)
+                VALUES (?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    updated_at = excluded.updated_at,
+                    payload_json = excluded.payload_json
+                """,
+                (run.run_id, updated_at, json.dumps(payload)),
+            )
+            self._apply_autonomy_retention(cur)
+            self._conn.commit()
+
+    async def list_autonomy_runs(self, limit: int = 50) -> List[AutonomyRunRecord]:
+        return await asyncio.to_thread(self._list_autonomy_runs, limit)
+
+    def _list_autonomy_runs(self, limit: int) -> List[AutonomyRunRecord]:
+        if limit <= 0:
+            return []
+        with self._lock:
+            cur = self._conn.cursor()
+            rows = cur.execute(
+                """
+                SELECT payload_json
+                FROM autonomy_runs
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        items: List[AutonomyRunRecord] = []
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            if hasattr(AutonomyRunRecord, "model_validate"):
+                items.append(AutonomyRunRecord.model_validate(payload))
+            else:
+                items.append(AutonomyRunRecord.parse_obj(payload))
+        return items
+
+    async def upsert_task_record(self, task: TaskRecord) -> None:
+        await asyncio.to_thread(self._upsert_task_record, task)
+
+    def _upsert_task_record(self, task: TaskRecord) -> None:
+        if hasattr(task, "model_dump"):
+            payload = task.model_dump(mode="json")
+        else:
+            payload = task.dict()
+        updated_at = payload.get("updated_at") or datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO task_records (task_id, updated_at, payload_json)
+                VALUES (?, ?, ?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    updated_at = excluded.updated_at,
+                    payload_json = excluded.payload_json
+                """,
+                (task.task_id, updated_at, json.dumps(payload)),
+            )
+            self._apply_task_retention(cur)
+            self._conn.commit()
+
+    async def list_task_records(self, limit: int = 50) -> List[TaskRecord]:
+        return await asyncio.to_thread(self._list_task_records, limit)
+
+    def _list_task_records(self, limit: int) -> List[TaskRecord]:
+        if limit <= 0:
+            return []
+        with self._lock:
+            cur = self._conn.cursor()
+            rows = cur.execute(
+                """
+                SELECT payload_json
+                FROM task_records
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        items: List[TaskRecord] = []
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            if hasattr(TaskRecord, "model_validate"):
+                items.append(TaskRecord.model_validate(payload))
+            else:
+                items.append(TaskRecord.parse_obj(payload))
+        return items
+
+    def _apply_autonomy_retention(self, cur: sqlite3.Cursor) -> None:
+        if self._autonomy_retention_days > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=self._autonomy_retention_days)
+            cur.execute(
+                "DELETE FROM autonomy_runs WHERE updated_at < ?",
+                (cutoff.isoformat(),),
+            )
+        if self._max_autonomy_runs <= 0:
+            return
+        count_row = cur.execute("SELECT COUNT(*) AS count FROM autonomy_runs").fetchone()
+        if not count_row or count_row["count"] <= self._max_autonomy_runs:
+            return
+        to_delete = count_row["count"] - self._max_autonomy_runs
+        cur.execute(
+            """
+            DELETE FROM autonomy_runs
+            WHERE run_id IN (
+                SELECT run_id
+                FROM autonomy_runs
+                ORDER BY updated_at ASC, run_id ASC
+                LIMIT ?
+            )
+            """,
+            (to_delete,),
+        )
+
+    def _apply_task_retention(self, cur: sqlite3.Cursor) -> None:
+        if self._task_retention_days > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=self._task_retention_days)
+            cur.execute(
+                "DELETE FROM task_records WHERE updated_at < ?",
+                (cutoff.isoformat(),),
+            )
+        if self._max_task_records <= 0:
+            return
+        count_row = cur.execute("SELECT COUNT(*) AS count FROM task_records").fetchone()
+        if not count_row or count_row["count"] <= self._max_task_records:
+            return
+        to_delete = count_row["count"] - self._max_task_records
+        cur.execute(
+            """
+            DELETE FROM task_records
+            WHERE task_id IN (
+                SELECT task_id
+                FROM task_records
+                ORDER BY updated_at ASC, task_id ASC
+                LIMIT ?
+            )
+            """,
+            (to_delete,),
+        )
 
     def _fetch_recent(self, limit: int) -> List[WindowEvent]:
         if limit <= 0:

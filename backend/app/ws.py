@@ -7,8 +7,9 @@ from fastapi import WebSocket
 
 
 class WebSocketHub:
-    def __init__(self) -> None:
+    def __init__(self, send_timeout_s: float = 1.0) -> None:
         self._clients: Set[WebSocket] = set()
+        self._send_timeout_s = send_timeout_s
         self._lock = asyncio.Lock()
 
     async def add(self, ws: WebSocket) -> None:
@@ -26,11 +27,16 @@ class WebSocketHub:
         if not clients:
             return
         stale = []
-        for ws in clients:
+
+        async def _send_one(ws: WebSocket):
             try:
-                await ws.send_json(payload)
+                await asyncio.wait_for(ws.send_json(payload), timeout=self._send_timeout_s)
+                return None
             except Exception:
-                stale.append(ws)
+                return ws
+
+        results = await asyncio.gather(*[_send_one(ws) for ws in clients], return_exceptions=False)
+        stale.extend(ws for ws in results if ws is not None)
         if stale:
             async with self._lock:
                 for ws in stale:

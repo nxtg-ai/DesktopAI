@@ -18,6 +18,40 @@
         <div class="status" id="status">connecting</div>
       </header>
 
+      <section class="grid top-grid">
+        <article class="card avatar-card" id="avatar">
+          <div class="card-header">
+            <h2>Lightwave Avatar</h2>
+            <span class="pill" id="voice-state">standby</span>
+          </div>
+          <div class="avatar-wrap">
+            <canvas id="avatar-canvas" aria-label="3D lightwave avatar"></canvas>
+          </div>
+          <p class="meta" id="stt-status">Mic: not started</p>
+        </article>
+
+        <article class="card voice-card">
+          <div class="card-header">
+            <h2>Voice Control</h2>
+            <span class="pill" id="voice-engine">local browser</span>
+          </div>
+          <div class="card-body">
+            <p class="summary-text" id="voice-transcript">Transcript will appear here when listening.</p>
+            <textarea
+              id="voice-text"
+              class="voice-text"
+              rows="4"
+              placeholder="Type text for TTS, or start listening to fill this automatically."
+              aria-label="Voice text input"
+            ></textarea>
+            <div class="voice-controls">
+              <button class="btn secondary" id="mic-btn">Start Listening</button>
+              <button class="btn" id="speak-btn">Speak Text</button>
+            </div>
+          </div>
+        </article>
+      </section>
+
       <section class="grid">
         <article class="card" id="current">
           <div class="card-header">
@@ -40,7 +74,95 @@
           </div>
           <div class="card-body">
             <p class="summary-text" id="summary-text">Ollama summary is optional. If available, click below.</p>
-            <button class="btn" id="summary-btn" disabled>Summarize with Ollama</button>
+            <p class="meta" id="ollama-detail">Ollama diagnostics: pending</p>
+            <div class="voice-controls">
+              <select id="ollama-model-select" aria-label="Ollama model">
+                <option value="">Model: loading…</option>
+              </select>
+              <button class="btn secondary" id="ollama-model-refresh-btn">Refresh Models</button>
+              <button class="btn secondary" id="ollama-model-apply-btn">Apply Model</button>
+              <button class="btn secondary" id="ollama-model-reset-btn">Use Config Model</button>
+              <button class="btn secondary" id="ollama-probe-btn">Probe Model</button>
+            </div>
+            <p class="meta" id="ollama-model-meta">Ollama model: unknown</p>
+            <p class="meta" id="ollama-probe-result">Probe: not run</p>
+            <div class="voice-controls">
+              <button class="btn" id="summary-btn" disabled>Summarize with Ollama</button>
+              <button class="btn secondary" id="summary-read-btn">Read Summary</button>
+            </div>
+            <div class="runtime-readiness">
+              <p class="meta" id="executor-status">Executor: checking…</p>
+              <p class="meta" id="executor-preflight-result">Preflight: not run</p>
+              <button class="btn secondary" id="executor-preflight-btn">Run Executor Preflight</button>
+              <ul class="events runtime-checks" id="executor-preflight-checks"></ul>
+              <div class="voice-controls">
+                <select id="planner-mode-select" aria-label="Autonomy planner mode">
+                  <option value="deterministic">Planner: deterministic</option>
+                  <option value="auto">Planner: auto</option>
+                  <option value="ollama_required">Planner: ollama_required</option>
+                </select>
+                <button class="btn secondary" id="planner-mode-apply-btn">Apply Planner Mode</button>
+                <button class="btn secondary" id="planner-mode-reset-btn">Use Config Default</button>
+              </div>
+              <p class="meta" id="planner-mode-meta">Planner mode: unknown</p>
+              <p class="meta" id="readiness-status-result">Readiness: not run</p>
+              <button class="btn secondary" id="readiness-status-refresh-btn">Refresh Readiness</button>
+              <ul class="events runtime-checks" id="readiness-status-checks"></ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="card" id="autonomy">
+          <div class="card-header">
+            <h2>Autonomous Mode</h2>
+            <span class="pill" id="autonomy-status">idle</span>
+          </div>
+          <div class="card-body">
+            <p class="summary-text">
+              Runs planner → executor → verifier continuously until completion or manual stop.
+            </p>
+            <textarea
+              id="autonomy-objective"
+              class="voice-text"
+              rows="3"
+              placeholder="Objective (example: Open Outlook, search for sender, draft and send reply)"
+              aria-label="Autonomy objective"
+            ></textarea>
+            <div class="autonomy-controls">
+              <label class="autonomy-field">
+                Max iterations
+                <input id="autonomy-max-iterations" type="number" min="1" max="500" value="24" />
+              </label>
+              <label class="autonomy-field">
+                Parallel agents
+                <input id="autonomy-parallel-agents" type="number" min="1" max="16" value="3" />
+              </label>
+              <label class="autonomy-toggle">
+                <input id="autonomy-auto-approve" type="checkbox" />
+                Auto-approve irreversible
+              </label>
+            </div>
+            <div class="voice-controls">
+              <button class="btn" id="autonomy-start-btn">Start Run</button>
+              <button class="btn secondary" id="autonomy-approve-btn" disabled>Approve Next</button>
+              <button class="btn secondary" id="autonomy-cancel-btn" disabled>Cancel Run</button>
+              <button class="btn secondary" id="readiness-gate-btn">Run Readiness Gate</button>
+            </div>
+            <p class="meta" id="autonomy-run-meta">Run: —</p>
+            <p class="meta" id="readiness-gate-result">Readiness Gate: not run</p>
+            <textarea
+              id="readiness-matrix-objectives"
+              class="voice-text"
+              rows="3"
+              placeholder="Readiness matrix objectives (one per line)"
+              aria-label="Readiness matrix objectives"
+            ></textarea>
+            <div class="voice-controls">
+              <button class="btn secondary" id="readiness-matrix-btn">Run Readiness Matrix</button>
+            </div>
+            <p class="meta" id="readiness-matrix-result">Readiness Matrix: not run</p>
+            <ul class="events readiness-matrix-log" id="readiness-matrix-results"></ul>
+            <ul class="events autonomy-log" id="autonomy-log"></ul>
           </div>
         </article>
       </section>
@@ -75,8 +197,55 @@
         </div>
         <ul class="events" id="events"></ul>
       </section>
+
+      <section class="card" id="journey-console">
+        <div class="card-header">
+          <h2>Journey Console</h2>
+          <span class="pill" id="journey-event-count">0</span>
+        </div>
+        <p class="summary-text">
+          Inspect real frontend telemetry as the user sees it. Select a session and review emitted UI events.
+        </p>
+        <div class="journey-controls">
+          <select id="journey-session" aria-label="Telemetry session"></select>
+          <button class="btn secondary" id="journey-refresh-btn">Refresh Journey</button>
+        </div>
+        <p class="meta" id="journey-meta">Session: —</p>
+        <ul class="events journey-log" id="journey-events"></ul>
+      </section>
+
+      <section class="card" id="runtime-logs-console">
+        <div class="card-header">
+          <h2>Runtime Logs</h2>
+          <span class="pill" id="runtime-log-count">0</span>
+        </div>
+        <p class="summary-text">
+          Live backend log buffer for correlating UI behavior with server/runtime events.
+        </p>
+        <div class="journey-controls">
+          <input
+            type="search"
+            id="runtime-logs-search"
+            placeholder="Filter logs by text"
+            aria-label="Runtime log search"
+          />
+          <select id="runtime-logs-level" aria-label="Runtime log level">
+            <option value="">All levels</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+            <option value="CRITICAL">CRITICAL</option>
+          </select>
+          <button class="btn secondary" id="runtime-logs-refresh-btn">Refresh Logs</button>
+          <button class="btn secondary" id="runtime-logs-correlate-btn">Correlate Session</button>
+          <button class="btn secondary" id="runtime-logs-clear-btn">Clear Logs</button>
+        </div>
+        <p class="meta" id="runtime-logs-meta">Logs: —</p>
+        <ul class="events journey-log" id="runtime-logs"></ul>
+      </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script type="module" src="/static/app.js"></script>
   </body>
 </html>

@@ -10,3 +10,7 @@ backend/.coverage
 backend/htmlcov/
 collector/target/
 backend/data/
+artifacts/
+ui-tests/node_modules/
+ui-tests/playwright-report/
+ui-tests/test-results/
