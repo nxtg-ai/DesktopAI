@@ -107,8 +107,12 @@ def test_chat_basic(ollama_client):
         messages = [
             {"role": "user", "content": "What is 2+2? Answer with just the number."}
         ]
-        response = await ollama_client.chat(messages, timeout_s=CI_TIMEOUT)
+        response_text, status_code, error = await ollama_client._chat_once(
+            messages, ollama_client.model, timeout_s=CI_TIMEOUT
+        )
 
+        assert error is None, f"chat failed: {error}"
+        response = response_text
         assert response is not None, "chat should return a response"
         assert isinstance(response, str)
         assert len(response.strip()) > 0, "Response should not be empty"
@@ -142,8 +146,12 @@ def test_chat_structured_output(ollama_client):
             "required": ["answer"]
         }
 
-        response = await ollama_client.chat(messages, format=json_schema, timeout_s=CI_TIMEOUT)
+        response_text, status_code, error = await ollama_client._chat_once(
+            messages, ollama_client.model, timeout_s=CI_TIMEOUT, format=json_schema
+        )
 
+        assert error is None, f"structured chat failed: {error}"
+        response = response_text
         assert response is not None, "chat should return a response"
         assert isinstance(response, str)
 
