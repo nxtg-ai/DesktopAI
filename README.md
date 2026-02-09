@@ -20,7 +20,8 @@
 </p>
 
 <p align="center">
-  <img src="https://github.com/nxtg-ai/DesktopAI/actions/workflows/backend.yml/badge.svg" alt="CI"/>
+  <img src="https://github.com/nxtg-ai/DesktopAI/actions/workflows/backend-test.yml/badge.svg" alt="Backend Tests"/>
+  <img src="https://github.com/nxtg-ai/DesktopAI/actions/workflows/llm-integration.yml/badge.svg" alt="LLM Integration"/>
   <img src="https://img.shields.io/badge/tests-188%20passing-brightgreen" alt="Tests"/>
   <img src="https://img.shields.io/badge/cloud%20deps-zero-blue" alt="Zero cloud deps"/>
   <img src="https://img.shields.io/badge/license-private-lightgrey" alt="License"/>
