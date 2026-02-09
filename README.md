@@ -21,7 +21,7 @@
 
 <p align="center">
   <img src="https://github.com/nxtg-ai/DesktopAI/actions/workflows/backend.yml/badge.svg" alt="CI"/>
-  <img src="https://img.shields.io/badge/tests-125%20passing-brightgreen" alt="Tests"/>
+  <img src="https://img.shields.io/badge/tests-188%20passing-brightgreen" alt="Tests"/>
   <img src="https://img.shields.io/badge/cloud%20deps-zero-blue" alt="Zero cloud deps"/>
   <img src="https://img.shields.io/badge/license-private-lightgrey" alt="License"/>
 </p>
@@ -47,13 +47,13 @@ An intelligent desktop assistant that **observes** your Windows activity in real
 <td width="33%">
 
 ### Rust Collector
-Low-level Windows observer built in Rust. Hooks into Win32 and UI Automation APIs to capture foreground window changes, idle/active transitions, and optional UIA snapshots. Ships events over WebSocket to the backend in real time.
+Low-level Windows observer built in Rust (8 modules, 55 tests). Hooks into Win32 and UI Automation APIs to capture foreground window changes, idle/active transitions, recursive UIA element trees, and optional desktop screenshots. Ships events over WebSocket to the backend in real time.
 
 </td>
 <td width="34%">
 
 ### FastAPI Backend
-Python backend running in WSL2. Manages state, persists to SQLite, classifies activity, orchestrates autonomous task execution, and serves the web UI. 40+ REST endpoints and 2 WebSocket channels.
+Python backend running in WSL2 (125 unit tests + 8 integration tests). Manages state, persists to SQLite, classifies activity via rules or local LLM, orchestrates autonomous task execution with Playwright browser automation, and serves the web UI. 40+ REST endpoints and 2 WebSocket channels.
 
 </td>
 <td width="33%">
@@ -76,7 +76,7 @@ Real-time dashboard streaming desktop context over WebSocket. Event filters, cat
 <img src="https://img.shields.io/badge/-Real--Time-0f8b8d?style=flat-square" alt="Real-Time"/>
 <br/><br/>
 <strong>Live Window Tracking</strong><br/>
-<sub>Foreground changes, idle detection, and UIA snapshots streamed in under 50ms end-to-end</sub>
+<sub>Foreground changes, idle detection, recursive UIA tree capture, and desktop screenshots streamed in real time</sub>
 <br/><br/>
 </td>
 <td align="center" width="25%">
@@ -113,7 +113,10 @@ Real-time dashboard streaming desktop context over WebSocket. Event filters, cat
 | Capability | Description |
 |---|---|
 | **Voice Control** | Browser-native speech recognition and TTS with live transcript |
-| **Ollama Integration** | Optional local LLM for contextual summaries and smart autonomy planning |
+| **Ollama Integration** | Local LLM via `/api/chat` with vision, structured JSON output, and auto-fallback on model-not-found |
+| **Multi-Model Support** | Per-role Ollama models (classifier, planner, executor) with runtime hot-swap |
+| **Browser Automation** | Playwright executor via Chrome DevTools Protocol for navigate, click, fill, screenshot |
+| **Screenshot Capture** | GDI-based desktop capture with JPEG encoding, ring buffer, and configurable downscaling |
 | **Token Auth** | Opt-in Bearer token auth for all API endpoints (dev mode = no auth) |
 | **SQLite Persistence** | Events, autonomy runs, and task records survive restarts with configurable retention |
 | **Readiness Gates** | One-shot and matrix readiness checks for deployment validation |
@@ -122,6 +125,7 @@ Real-time dashboard streaming desktop context over WebSocket. Event filters, cat
 | **Ollama Model Switching** | Hot-swap between installed models at runtime, persisted across restarts |
 | **Planner Modes** | `deterministic`, `auto`, or `ollama_required` &mdash; switchable at runtime |
 | **PowerShell Executor** | Real Windows automation via PowerShell COM with retry and preflight checks |
+| **Recursive UIA Trees** | Depth-limited UI Automation tree walker with pattern detection (Value, Toggle, Invoke) |
 
 </details>
 
@@ -254,10 +258,17 @@ If `API_TOKEN` is unset, all requests pass through (dev mode).
 ## Testing
 
 ```bash
-make backend-test        # 125 pytest tests
-make ui-test             # Playwright browser smoke tests (headless)
-make ui-test-headed      # Watch the browser journey
-make ui-gate             # Telemetry validation gate
+# Backend (Python)
+make backend-test              # 125 unit tests (excludes integration)
+make backend-test-integration  # 8 real Ollama integration tests
+
+# Rust Collector
+cd collector && cargo test     # 55 unit tests (Linux-testable)
+
+# UI (Playwright)
+make ui-test                   # Browser smoke tests (headless)
+make ui-test-headed            # Watch the browser journey
+make ui-gate                   # Telemetry validation gate
 ```
 
 <details>
@@ -304,10 +315,14 @@ Artifacts are written to:
 | `DB_MAX_TASK_RECORDS` | `5000` | Max task records |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
 | `OLLAMA_MODEL` | `llama3.1:8b` | Default Ollama model |
+| `OLLAMA_CLASSIFIER_MODEL` | *(empty)* | Override model for activity classification |
+| `OLLAMA_PLANNER_MODEL` | *(empty)* | Override model for autonomy planner |
+| `OLLAMA_EXECUTOR_MODEL` | *(empty)* | Override model for task executor |
 | `AUTONOMY_PLANNER_MODE` | `deterministic` | `deterministic` / `auto` / `ollama_required` |
 | `CLASSIFIER_DEFAULT` | `docs` | Default activity category |
 | `CLASSIFIER_USE_OLLAMA` | `0` | Enable Ollama classification fallback |
-| `ACTION_EXECUTOR_MODE` | `auto` | `auto` / `windows` / `simulated` |
+| `ACTION_EXECUTOR_MODE` | `auto` | `auto` / `windows` / `simulated` / `playwright` |
+| `CDP_ENDPOINT` | `http://localhost:9222` | Chrome DevTools Protocol endpoint for Playwright |
 | `ACTION_EXECUTOR_TIMEOUT_S` | `20` | PowerShell execution timeout |
 | `ALLOWED_ORIGINS` | *(empty)* | CORS origins (comma-separated) |
 
@@ -330,6 +345,11 @@ See `.env.example` for the complete reference.
 | `UIA_ENABLED` | `0` | Enable UI Automation snapshots |
 | `UIA_THROTTLE_MS` | `1000` | UIA throttle interval |
 | `UIA_TEXT_MAX_CHARS` | `240` | Max UIA text capture length |
+| `UIA_MAX_DEPTH` | `3` | Max recursive tree depth |
+| `ENABLE_SCREENSHOT` | `0` | Enable desktop screenshot capture |
+| `SCREENSHOT_MAX_WIDTH` | `1024` | Max screenshot width (px) |
+| `SCREENSHOT_MAX_HEIGHT` | `768` | Max screenshot height (px) |
+| `SCREENSHOT_QUALITY` | `85` | JPEG quality (0-100) |
 
 </details>
 
@@ -338,9 +358,10 @@ See `.env.example` for the complete reference.
 ## Development
 
 ```bash
-make backend-dev          # Start dev server with reload
-make backend-test         # Run pytest suite
-make ui-test              # Headless Playwright tests
+make backend-dev               # Start dev server with reload
+make backend-test              # Run unit tests (125 tests)
+make backend-test-integration  # Run Ollama integration tests (8 tests)
+make ui-test                   # Headless Playwright tests
 make ui-test-headed       # Watch browser journey
 make ui-test-live         # Tests against running backend
 make ui-gate              # Telemetry validation gate
@@ -377,10 +398,11 @@ pre-commit install
 
 DesktopAI is designed to be **local-first and privacy-preserving**:
 
-- No keystrokes or screenshots are captured
+- No keystrokes are captured
+- Screenshots are **opt-in** (`ENABLE_SCREENSHOT=1`), JPEG-compressed, and downscaled &mdash; disabled by default
 - No data leaves your network in the core path
 - Ollama runs locally &mdash; no cloud LLM calls
-- UIA snapshots are optional, throttled, and text-truncated
+- UIA snapshots are optional, throttled, depth-limited, and text-truncated
 - The backend keeps a memory cache for fast UI updates and persists to local SQLite
 
 ---

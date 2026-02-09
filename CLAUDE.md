@@ -8,8 +8,8 @@ An intelligent desktop assistant that observes user activity and can autonomousl
 - Real-time responsiveness with low-latency observation and execution
 
 ## Architecture Overview
-- **Windows Collector (Rust):** Monitors foreground window changes, idle/active state, optional UIA snapshots
-- **WSL2 Backend (FastAPI):** State management, SQLite persistence, activity classification, autonomy orchestration
+- **Windows Collector (Rust):** 8 modules (config, event, network, idle, uia, windows, screenshot, lib). Captures foreground window changes, idle/active state, recursive UIA element trees, and opt-in desktop screenshots. Compiles for `x86_64-pc-windows-gnu`, 55 tests run on Linux via `#[cfg(windows)]` gates.
+- **WSL2 Backend (FastAPI):** State management, SQLite persistence, activity classification (rules + Ollama), autonomy orchestration, Playwright browser automation via CDP. OllamaClient supports `/api/chat` with vision + structured JSON output, auto-fallback on model-not-found.
 - **Web UI:** Live state display, category filters, autonomy controls, telemetry dashboard
 
 ## Key Directories
@@ -34,16 +34,18 @@ artifacts/         - Test artifacts and telemetry logs
 ### Quick Commands
 ```bash
 # Backend
-make backend-dev          # Start dev server
-make backend-test         # Run pytest suite
+make backend-dev               # Start dev server
+make backend-test              # Run 125 unit tests (excludes integration)
+make backend-test-integration  # Run 8 real Ollama integration tests
+
+# Rust Collector
+cd collector && cargo test     # Run 55 unit tests (Linux-testable)
+make collector-build           # Build Windows binary
 
 # UI Testing
 make ui-test              # Headless Playwright tests
 make ui-test-headed       # Watch browser journey
 make ui-gate              # Telemetry validation gate
-
-# Collector
-make collector-build      # Build Windows collector
 ```
 
 ### Environment Setup
