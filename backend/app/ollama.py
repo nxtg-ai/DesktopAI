@@ -194,7 +194,7 @@ class OllamaClient:
 
         model_error = None
         if isinstance(data, dict):
-            model_error = data.get("error") or data.get("message")
+            model_error = data.get("error")
             if model_error is not None:
                 model_error = str(model_error).strip()
 
