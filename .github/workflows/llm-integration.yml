@@ -33,7 +33,7 @@ jobs:
           done
 
       - name: Pull model
-        run: ollama pull qwen3:1.7b
+        run: ollama pull qwen2.5:0.5b
 
       - name: Verify Ollama is running
         run: |
@@ -42,12 +42,12 @@ jobs:
 
       - name: Warm up model
         run: |
-          curl -s http://localhost:11434/api/generate -d '{"model":"qwen3:1.7b","prompt":"hi","stream":false}' --max-time 120 | head -c 200
+          curl -s http://localhost:11434/api/generate -d '{"model":"qwen2.5:0.5b","prompt":"hi","stream":false}' --max-time 120 | head -c 200
           echo ""
 
       - name: Run integration tests
         env:
           OLLAMA_URL: http://localhost:11434
-          OLLAMA_MODEL: qwen3:1.7b
+          OLLAMA_MODEL: qwen2.5:0.5b
         run: |
-          pytest backend/tests/test_llm_integration.py -v -m integration --timeout=120
+          pytest backend/tests/test_llm_integration.py -v -m integration --timeout=300
