@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &nbsp;&middot;&nbsp;
+  <a href="docs/AGENT_GUIDE.md"><strong>Agent Guide</strong></a> &nbsp;&middot;&nbsp;
   <a href="#architecture"><strong>Architecture</strong></a> &nbsp;&middot;&nbsp;
   <a href="#features"><strong>Features</strong></a> &nbsp;&middot;&nbsp;
   <a href="#api-reference"><strong>API</strong></a> &nbsp;&middot;&nbsp;

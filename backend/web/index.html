@@ -52,6 +52,33 @@
         </article>
       </section>
 
+      <section class="card chat-section">
+        <div class="card-header">
+          <h2>Chat with DesktopAI</h2>
+          <span class="pill" id="chat-status">ready</span>
+        </div>
+        <div class="chat-container">
+          <div class="chat-context-bar" id="chat-context-bar">
+            <span class="context-indicator" id="chat-context-indicator">No desktop context</span>
+          </div>
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-welcome" id="chat-welcome">
+              <p>Ask me anything about your desktop, or tell me to do something.</p>
+              <div class="chat-suggestions">
+                <button class="chat-suggestion" data-message="What am I working on?">What am I working on?</button>
+                <button class="chat-suggestion" data-message="Summarize my current activity">Summarize my activity</button>
+                <button class="chat-suggestion" data-message="Draft a reply to this email">Draft email reply</button>
+                <button class="chat-suggestion" data-message="Open Notepad and write a meeting summary">Open Notepad</button>
+              </div>
+            </div>
+          </div>
+          <div class="chat-input-bar">
+            <input type="text" id="chat-input" placeholder="Ask something or give a command…" aria-label="Chat message" />
+            <button class="btn" id="chat-send-btn">Send</button>
+          </div>
+        </div>
+      </section>
+
       <section class="grid">
         <article class="card" id="current">
           <div class="card-header">
@@ -64,6 +91,24 @@
             <p class="meta" id="current-category">Category: —</p>
             <p class="meta" id="current-idle">Status: —</p>
             <p class="meta" id="current-time">—</p>
+          </div>
+        </article>
+
+        <article class="card agent-vision-card" id="agent-vision">
+          <div class="card-header">
+            <h2>Agent Vision</h2>
+            <span class="pill" id="vision-status">offline</span>
+          </div>
+          <div class="card-body">
+            <p class="vision-title" id="vision-window-title">No desktop context</p>
+            <p class="meta" id="vision-process">Process: —</p>
+            <p class="meta" id="vision-timestamp">Last update: —</p>
+            <div class="vision-uia">
+              <p class="vision-uia-label">UI Elements</p>
+              <pre class="vision-uia-text" id="vision-uia-text">No UIA data available</pre>
+            </div>
+            <p class="meta" id="vision-screenshot-status">Screenshot: unavailable</p>
+            <button class="btn secondary" id="vision-refresh-btn">Refresh</button>
           </div>
         </article>
 

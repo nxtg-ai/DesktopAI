@@ -33,6 +33,7 @@ from .schemas import (
     AutonomyApproveRequest,
     AutonomyPlannerModeRequest,
     AutonomyStartRequest,
+    ChatRequest,
     ClassifyRequest,
     OllamaModelRequest,
     OllamaProbeRequest,
@@ -1090,3 +1091,105 @@ async def classify(request: ClassifyRequest) -> dict:
     )
     result = await classifier.classify(event, use_ollama=request.use_ollama)
     return {"category": result.category, "source": result.source}
+
+
+_ACTION_KEYWORDS = {"draft", "reply", "send", "open", "type", "search", "click", "launch", "compose", "write", "submit", "delete", "forward", "close", "switch"}
+
+
+def _is_action_intent(message: str) -> bool:
+    words = set(message.lower().split())
+    return bool(words & _ACTION_KEYWORDS)
+
+
+def _build_context_response(ctx) -> str:
+    if ctx is None:
+        return "I don't have visibility into your desktop right now. Connect the Windows collector to give me eyes on your screen."
+    parts = [f"You're currently in **{ctx.window_title}**"]
+    if ctx.process_exe:
+        parts[0] += f" ({ctx.process_exe})"
+    parts[0] += "."
+    if ctx.uia_summary:
+        elements = ctx.uia_summary[:300]
+        parts.append(f"I can see these UI elements: {elements}")
+    if ctx.screenshot_b64:
+        parts.append("I also have a screenshot of your desktop.")
+    return " ".join(parts)
+
+
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRequest) -> dict:
+    from .desktop_context import DesktopContext
+
+    # Get current desktop context
+    current_event = await store.current()
+    ctx = DesktopContext.from_event(current_event) if current_event else None
+    ctx_dict = None
+    if ctx:
+        ctx_dict = {
+            "window_title": ctx.window_title,
+            "process_exe": ctx.process_exe,
+            "uia_summary": ctx.uia_summary[:500] if ctx.uia_summary else "",
+            "screenshot_available": ctx.screenshot_b64 is not None,
+        }
+
+    message = request.message.strip()
+
+    # Check if this is an action request
+    action_triggered = False
+    run_id = None
+    if request.allow_actions and _is_action_intent(message):
+        try:
+            start_req = AutonomyStartRequest(
+                objective=message,
+                max_iterations=24,
+                parallel_agents=3,
+                auto_approve_irreversible=False,
+            )
+            run = await autonomy.start(start_req)
+            action_triggered = True
+            run_id = run.run_id
+        except Exception as exc:
+            logger.warning("Chat action trigger failed: %s", exc)
+
+    # Try LLM response
+    is_available = await ollama.available()
+    if is_available:
+        prompt_parts = [
+            "You are DesktopAI, an intelligent desktop assistant. "
+            "Respond concisely and helpfully.",
+        ]
+        if ctx:
+            prompt_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
+        if action_triggered:
+            prompt_parts.append(
+                f"\nI've started an autonomous task for: {message}. "
+                "Acknowledge this and describe what you're doing."
+            )
+        prompt_parts.append(f"\nUser: {message}")
+
+        messages = [{"role": "user", "content": "\n".join(prompt_parts)}]
+        llm_response = await ollama.chat(messages)
+        if llm_response and llm_response.strip():
+            return {
+                "response": llm_response.strip(),
+                "source": "ollama",
+                "desktop_context": ctx_dict,
+                "action_triggered": action_triggered,
+                "run_id": run_id,
+            }
+
+    # Fallback: context-based response
+    if action_triggered:
+        response = f"Got it — I've started working on: **{message}**."
+        if ctx:
+            response += f" I can see you're in {ctx.window_title}."
+    else:
+        response = _build_context_response(ctx)
+
+    return {
+        "response": response,
+        "source": "context",
+        "desktop_context": ctx_dict,
+        "action_triggered": action_triggered,
+        "run_id": run_id,
+    }

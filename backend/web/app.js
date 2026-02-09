@@ -73,6 +73,22 @@ const runtimeLogsLevelEl = document.getElementById("runtime-logs-level");
 const runtimeLogsClearBtn = document.getElementById("runtime-logs-clear-btn");
 const runtimeLogsCorrelateBtn = document.getElementById("runtime-logs-correlate-btn");
 
+const chatStatusEl = document.getElementById("chat-status");
+const chatContextIndicatorEl = document.getElementById("chat-context-indicator");
+const chatMessagesEl = document.getElementById("chat-messages");
+const chatWelcomeEl = document.getElementById("chat-welcome");
+const chatInputEl = document.getElementById("chat-input");
+const chatSendBtn = document.getElementById("chat-send-btn");
+const chatSuggestionBtns = document.querySelectorAll(".chat-suggestion");
+
+const visionStatusEl = document.getElementById("vision-status");
+const visionWindowTitleEl = document.getElementById("vision-window-title");
+const visionProcessEl = document.getElementById("vision-process");
+const visionTimestampEl = document.getElementById("vision-timestamp");
+const visionUiaTextEl = document.getElementById("vision-uia-text");
+const visionScreenshotStatusEl = document.getElementById("vision-screenshot-status");
+const visionRefreshBtn = document.getElementById("vision-refresh-btn");
+
 const avatar = new AvatarEngine(avatarCanvas);
 const MAX_EVENTS = 50;
 const TELEMETRY_BATCH_SIZE = 50;
@@ -109,6 +125,8 @@ let journeyPollTimer = null;
 let activeJourneySessionId = "";
 let runtimeLogsViewMode = "live";
 let runtimeLogsCorrelatedSessionId = "";
+let chatSending = false;
+let lastVisionContext = null;
 const telemetrySessionId = (() => {
   if (window.crypto && typeof window.crypto.randomUUID === "function") {
     return `ui-${window.crypto.randomUUID()}`;
@@ -1159,13 +1177,17 @@ function connectWs() {
         if (events.length > MAX_EVENTS) events = events.slice(-MAX_EVENTS);
         avatar.bump();
         renderEvents();
+        void refreshAgentVision();
         queueTelemetry("event_stream_received", "live event received", {
           type: payload.event.type || "foreground",
           process_exe: payload.event.process_exe || "",
           title: payload.event.title || "",
         });
       }
-      if (payload.type === "state") updateCurrent(payload.state);
+      if (payload.type === "state") {
+        updateCurrent(payload.state);
+        void refreshAgentVision();
+      }
       if (payload.type === "autonomy_run" && payload.run) {
         if (!activeRunId || payload.run.run_id === activeRunId) {
           applyRunUiState(payload.run);
@@ -1660,6 +1682,209 @@ async function setupSpeechRecognition() {
   };
 }
 
+// ── Chat Functions ──
+
+function appendChatMessage(role, text, meta = {}) {
+  if (chatWelcomeEl) chatWelcomeEl.style.display = "none";
+
+  const msg = document.createElement("div");
+  msg.className = `chat-msg ${role}`;
+
+  const bubble = document.createElement("div");
+  bubble.className = "chat-msg-bubble";
+  bubble.textContent = text;
+  msg.appendChild(bubble);
+
+  if (role === "agent") {
+    const badges = document.createElement("div");
+    badges.className = "chat-msg-badges";
+    if (meta.source) {
+      const badge = document.createElement("span");
+      badge.className = "chat-badge source";
+      badge.textContent = meta.source;
+      badges.appendChild(badge);
+    }
+    if (meta.action_triggered) {
+      const badge = document.createElement("span");
+      badge.className = "chat-badge action";
+      badge.textContent = meta.run_id ? `action: ${meta.run_id.slice(0, 8)}` : "action started";
+      badges.appendChild(badge);
+    }
+    if (badges.childNodes.length > 0) msg.appendChild(badges);
+  }
+
+  const metaEl = document.createElement("div");
+  metaEl.className = "chat-msg-meta";
+  metaEl.textContent = formatTime(new Date().toISOString());
+  msg.appendChild(metaEl);
+
+  chatMessagesEl.appendChild(msg);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+}
+
+function showChatTyping() {
+  const el = document.createElement("div");
+  el.className = "chat-typing";
+  el.id = "chat-typing-indicator";
+  el.innerHTML = '<div class="chat-typing-dots"><span></span><span></span><span></span></div>';
+  chatMessagesEl.appendChild(el);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+}
+
+function hideChatTyping() {
+  const el = document.getElementById("chat-typing-indicator");
+  if (el) el.remove();
+}
+
+async function sendChatMessage(text) {
+  const message = (text || "").trim();
+  if (!message || chatSending) return;
+
+  chatSending = true;
+  chatSendBtn.disabled = true;
+  chatInputEl.disabled = true;
+  chatStatusEl.textContent = "thinking…";
+  chatStatusEl.dataset.tone = "neutral";
+
+  appendChatMessage("user", message);
+  chatInputEl.value = "";
+  showChatTyping();
+
+  queueTelemetry("chat_sent", "chat message sent", { chars: message.length });
+
+  try {
+    const resp = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, allow_actions: true }),
+    });
+    const data = await resp.json();
+    hideChatTyping();
+
+    if (!resp.ok) {
+      appendChatMessage("agent", data.detail || "Something went wrong.");
+      chatStatusEl.textContent = "error";
+      chatStatusEl.dataset.tone = "warn";
+      queueTelemetry("chat_error", "chat request failed", { status: resp.status });
+      return;
+    }
+
+    appendChatMessage("agent", data.response, {
+      source: data.source,
+      action_triggered: data.action_triggered,
+      run_id: data.run_id,
+    });
+
+    chatStatusEl.textContent = "ready";
+    chatStatusEl.dataset.tone = "good";
+
+    if (data.desktop_context) {
+      updateChatContextBar(data.desktop_context);
+    }
+
+    if (data.action_triggered && data.run_id) {
+      activeRunId = data.run_id;
+      queueTelemetry("chat_action_triggered", "chat triggered action", { run_id: data.run_id });
+    }
+
+    queueTelemetry("chat_received", "chat response received", {
+      source: data.source,
+      action_triggered: Boolean(data.action_triggered),
+      chars: (data.response || "").length,
+    });
+  } catch (err) {
+    hideChatTyping();
+    appendChatMessage("agent", "Failed to reach the backend. Is the server running?");
+    chatStatusEl.textContent = "offline";
+    chatStatusEl.dataset.tone = "warn";
+    queueTelemetry("chat_failed", "chat request failed", { error: String(err) });
+  } finally {
+    chatSending = false;
+    chatSendBtn.disabled = false;
+    chatInputEl.disabled = false;
+    chatInputEl.focus();
+  }
+}
+
+function updateChatContextBar(ctx) {
+  if (!ctx) {
+    chatContextIndicatorEl.textContent = "No desktop context";
+    chatContextIndicatorEl.classList.remove("live");
+    return;
+  }
+  const parts = [ctx.window_title || "Unknown window"];
+  if (ctx.process_exe) parts[0] += ` (${ctx.process_exe})`;
+  if (ctx.screenshot_available) parts.push("screenshot available");
+  chatContextIndicatorEl.textContent = parts.join(" · ");
+  chatContextIndicatorEl.classList.add("live");
+}
+
+// ── Agent Vision Functions ──
+
+async function refreshAgentVision() {
+  try {
+    const resp = await fetch("/api/state/snapshot");
+    const data = await resp.json();
+
+    if (!data.context) {
+      visionStatusEl.textContent = "offline";
+      visionStatusEl.dataset.tone = "warn";
+      visionWindowTitleEl.textContent = "No desktop context";
+      visionProcessEl.textContent = "Process: —";
+      visionTimestampEl.textContent = "Last update: —";
+      visionUiaTextEl.textContent = "No UIA data available";
+      visionScreenshotStatusEl.textContent = "Screenshot: unavailable";
+      lastVisionContext = null;
+      updateChatContextBar(null);
+      return;
+    }
+
+    const ctx = data.context;
+    lastVisionContext = ctx;
+    visionStatusEl.textContent = "live";
+    visionStatusEl.dataset.tone = "good";
+    visionWindowTitleEl.textContent = ctx.window_title || "Unknown window";
+    visionProcessEl.textContent = `Process: ${ctx.process_exe || "unknown"}`;
+    visionTimestampEl.textContent = `Last update: ${formatTime(ctx.timestamp)}`;
+    visionUiaTextEl.textContent = ctx.uia_summary || "No UIA data captured";
+    visionScreenshotStatusEl.textContent = ctx.screenshot_available
+      ? "Screenshot: available"
+      : "Screenshot: unavailable";
+    updateChatContextBar(ctx);
+  } catch (err) {
+    visionStatusEl.textContent = "error";
+    visionStatusEl.dataset.tone = "warn";
+    console.error("agent vision refresh failed", err);
+  }
+}
+
+// ── Chat Event Listeners ──
+
+chatSendBtn.addEventListener("click", () => {
+  void sendChatMessage(chatInputEl.value);
+});
+
+chatInputEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    void sendChatMessage(chatInputEl.value);
+  }
+});
+
+chatSuggestionBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const message = btn.dataset.message || btn.textContent;
+    chatInputEl.value = message;
+    void sendChatMessage(message);
+  });
+});
+
+// ── Agent Vision Event Listeners ──
+
+visionRefreshBtn.addEventListener("click", () => {
+  void refreshAgentVision();
+});
+
 summaryBtn.addEventListener("click", async () => {
   summaryBtn.disabled = true;
   summaryText.textContent = "Summarizing…";
@@ -1834,5 +2059,6 @@ setupSpeechRecognition();
 refreshJourneyConsole();
 refreshRuntimeLogs();
 refreshReadinessStatus();
+refreshAgentVision();
 startJourneyPolling();
 scheduleTelemetryFlush();

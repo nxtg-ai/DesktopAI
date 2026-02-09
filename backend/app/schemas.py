@@ -213,3 +213,8 @@ class AutonomyRunRecord(BaseModel):
     updated_at: datetime
     finished_at: Optional[datetime] = None
     agent_log: List[AgentLogEntry] = Field(default_factory=list)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1)
+    allow_actions: bool = True
