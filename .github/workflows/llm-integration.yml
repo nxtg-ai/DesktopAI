@@ -40,6 +40,11 @@ jobs:
           curl -f http://localhost:11434/api/tags
           ollama list
 
+      - name: Warm up model
+        run: |
+          curl -s http://localhost:11434/api/generate -d '{"model":"qwen3:1.7b","prompt":"hi","stream":false}' --max-time 120 | head -c 200
+          echo ""
+
       - name: Run integration tests
         env:
           OLLAMA_URL: http://localhost:11434
