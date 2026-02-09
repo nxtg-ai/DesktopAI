@@ -100,9 +100,14 @@ pub fn env_u8(name: &str, default: u8) -> u8 {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::Mutex;
+
+    /// Env-var-mutating tests must hold this lock to avoid parallel pollution.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_env_bool_true_variants() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_BOOL_TRUE", "TRUE");
         assert!(env_bool("TEST_BOOL_TRUE", false));
         env::remove_var("TEST_BOOL_TRUE");
@@ -130,6 +135,7 @@ mod tests {
 
     #[test]
     fn test_env_bool_false_variants() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_BOOL_FALSE", "FALSE");
         assert!(!env_bool("TEST_BOOL_FALSE", true));
         env::remove_var("TEST_BOOL_FALSE");
@@ -157,6 +163,7 @@ mod tests {
 
     #[test]
     fn test_env_bool_empty_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_BOOL_EMPTY", "");
         assert!(env_bool("TEST_BOOL_EMPTY", true));
         assert!(!env_bool("TEST_BOOL_EMPTY", false));
@@ -165,6 +172,7 @@ mod tests {
 
     #[test]
     fn test_env_bool_missing_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::remove_var("TEST_BOOL_MISSING");
         assert!(env_bool("TEST_BOOL_MISSING", true));
         assert!(!env_bool("TEST_BOOL_MISSING", false));
@@ -172,6 +180,7 @@ mod tests {
 
     #[test]
     fn test_env_bool_invalid_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_BOOL_INVALID", "maybe");
         assert!(env_bool("TEST_BOOL_INVALID", true));
         assert!(!env_bool("TEST_BOOL_INVALID", false));
@@ -180,6 +189,7 @@ mod tests {
 
     #[test]
     fn test_env_u64_valid_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U64_VALID", "12345");
         assert_eq!(env_u64("TEST_U64_VALID", 999), 12345);
         env::remove_var("TEST_U64_VALID");
@@ -187,6 +197,7 @@ mod tests {
 
     #[test]
     fn test_env_u64_zero() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U64_ZERO", "0");
         assert_eq!(env_u64("TEST_U64_ZERO", 999), 0);
         env::remove_var("TEST_U64_ZERO");
@@ -194,6 +205,7 @@ mod tests {
 
     #[test]
     fn test_env_u64_max() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let max_val = u64::MAX.to_string();
         env::set_var("TEST_U64_MAX", &max_val);
         assert_eq!(env_u64("TEST_U64_MAX", 999), u64::MAX);
@@ -202,6 +214,7 @@ mod tests {
 
     #[test]
     fn test_env_u64_invalid_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U64_INVALID", "not_a_number");
         assert_eq!(env_u64("TEST_U64_INVALID", 999), 999);
         env::remove_var("TEST_U64_INVALID");
@@ -213,12 +226,14 @@ mod tests {
 
     #[test]
     fn test_env_u64_missing_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::remove_var("TEST_U64_MISSING");
         assert_eq!(env_u64("TEST_U64_MISSING", 999), 999);
     }
 
     #[test]
     fn test_env_usize_valid_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_USIZE_VALID", "54321");
         assert_eq!(env_usize("TEST_USIZE_VALID", 111), 54321);
         env::remove_var("TEST_USIZE_VALID");
@@ -226,6 +241,7 @@ mod tests {
 
     #[test]
     fn test_env_usize_zero() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_USIZE_ZERO", "0");
         assert_eq!(env_usize("TEST_USIZE_ZERO", 111), 0);
         env::remove_var("TEST_USIZE_ZERO");
@@ -233,6 +249,7 @@ mod tests {
 
     #[test]
     fn test_env_usize_invalid_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_USIZE_INVALID", "invalid");
         assert_eq!(env_usize("TEST_USIZE_INVALID", 111), 111);
         env::remove_var("TEST_USIZE_INVALID");
@@ -244,12 +261,14 @@ mod tests {
 
     #[test]
     fn test_env_usize_missing_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::remove_var("TEST_USIZE_MISSING");
         assert_eq!(env_usize("TEST_USIZE_MISSING", 111), 111);
     }
 
     #[test]
     fn test_env_u32_valid_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U32_VALID", "1920");
         assert_eq!(env_u32("TEST_U32_VALID", 999), 1920);
         env::remove_var("TEST_U32_VALID");
@@ -257,6 +276,7 @@ mod tests {
 
     #[test]
     fn test_env_u32_zero() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U32_ZERO", "0");
         assert_eq!(env_u32("TEST_U32_ZERO", 999), 0);
         env::remove_var("TEST_U32_ZERO");
@@ -264,6 +284,7 @@ mod tests {
 
     #[test]
     fn test_env_u32_max() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let max_val = u32::MAX.to_string();
         env::set_var("TEST_U32_MAX", &max_val);
         assert_eq!(env_u32("TEST_U32_MAX", 999), u32::MAX);
@@ -272,6 +293,7 @@ mod tests {
 
     #[test]
     fn test_env_u32_invalid_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U32_INVALID", "not_a_number");
         assert_eq!(env_u32("TEST_U32_INVALID", 999), 999);
         env::remove_var("TEST_U32_INVALID");
@@ -283,12 +305,14 @@ mod tests {
 
     #[test]
     fn test_env_u32_missing_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::remove_var("TEST_U32_MISSING");
         assert_eq!(env_u32("TEST_U32_MISSING", 999), 999);
     }
 
     #[test]
     fn test_env_u8_valid_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U8_VALID", "85");
         assert_eq!(env_u8("TEST_U8_VALID", 50), 85);
         env::remove_var("TEST_U8_VALID");
@@ -296,6 +320,7 @@ mod tests {
 
     #[test]
     fn test_env_u8_zero() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U8_ZERO", "0");
         assert_eq!(env_u8("TEST_U8_ZERO", 50), 0);
         env::remove_var("TEST_U8_ZERO");
@@ -303,6 +328,7 @@ mod tests {
 
     #[test]
     fn test_env_u8_max() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U8_MAX", "255");
         assert_eq!(env_u8("TEST_U8_MAX", 50), 255);
         env::remove_var("TEST_U8_MAX");
@@ -310,6 +336,7 @@ mod tests {
 
     #[test]
     fn test_env_u8_invalid_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("TEST_U8_INVALID", "not_a_number");
         assert_eq!(env_u8("TEST_U8_INVALID", 50), 50);
         env::remove_var("TEST_U8_INVALID");
@@ -325,12 +352,14 @@ mod tests {
 
     #[test]
     fn test_env_u8_missing_uses_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::remove_var("TEST_U8_MISSING");
         assert_eq!(env_u8("TEST_U8_MISSING", 50), 50);
     }
 
     #[test]
     fn test_config_from_env_defaults() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // Clear all relevant env vars
         env::remove_var("BACKEND_WS_URL");
         env::remove_var("BACKEND_HTTP_URL");
@@ -367,6 +396,7 @@ mod tests {
 
     #[test]
     fn test_config_from_env_custom_values() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::set_var("BACKEND_WS_URL", "ws://custom:9000/ws");
         env::set_var("BACKEND_HTTP_URL", "http://custom:9000/events");
         env::set_var("WS_RETRY_SECONDS", "10");
@@ -418,6 +448,7 @@ mod tests {
 
     #[test]
     fn test_config_clone() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let config1 = Config::from_env();
         let config2 = config1.clone();
         assert_eq!(config1.ws_url, config2.ws_url);
