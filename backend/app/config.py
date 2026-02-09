@@ -60,6 +60,9 @@ class Settings:
 
     ollama_url: str = _env("OLLAMA_URL", "http://localhost:11434")
     ollama_model: str = _env("OLLAMA_MODEL", "llama3.1:8b")
+    ollama_classifier_model: str = _env("OLLAMA_CLASSIFIER_MODEL", "")
+    ollama_planner_model: str = _env("OLLAMA_PLANNER_MODEL", "")
+    ollama_executor_model: str = _env("OLLAMA_EXECUTOR_MODEL", "")
     autonomy_planner_mode: str = _autonomy_planner_mode()
     classifier_default: str = _env("CLASSIFIER_DEFAULT", "docs")
     classifier_use_ollama: bool = _env_bool("CLASSIFIER_USE_OLLAMA", False)
@@ -72,6 +75,7 @@ class Settings:
     )
     action_executor_retry_count: int = _env_int("ACTION_EXECUTOR_RETRY_COUNT", 2)
     action_executor_retry_delay_ms: int = _env_int("ACTION_EXECUTOR_RETRY_DELAY_MS", 150)
+    cdp_endpoint: str = _env("CDP_ENDPOINT", "http://localhost:9222")
     ui_telemetry_artifact_dir: str = _env("UI_TELEMETRY_ARTIFACT_DIR", "artifacts/ui/telemetry")
     ui_telemetry_max_events: int = _env_int("UI_TELEMETRY_MAX_EVENTS", 5000)
     runtime_log_max_entries: int = _env_int("RUNTIME_LOG_MAX_ENTRIES", 2000)

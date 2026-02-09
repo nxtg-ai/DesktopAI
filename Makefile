@@ -2,13 +2,16 @@ BACKEND_HOST ?= 0.0.0.0
 BACKEND_PORT ?= 8000
 PYTEST ?= $(if $(wildcard .venv/bin/pytest),.venv/bin/pytest,pytest)
 
-.PHONY: backend-dev backend-test ui-test ui-test-headed ui-test-live ui-artifacts ui-sessions ui-gate collector-build skills-validate skills-score skills-score-all
+.PHONY: backend-dev backend-test backend-test-integration ui-test ui-test-headed ui-test-live ui-artifacts ui-sessions ui-gate collector-build skills-validate skills-score skills-score-all
 
 backend-dev:
 	uvicorn app.main:app --app-dir backend --host $(BACKEND_HOST) --port $(BACKEND_PORT) --reload
 
 backend-test:
-	$(PYTEST) -q backend/tests
+	$(PYTEST) -q backend/tests -m "not integration"
+
+backend-test-integration:
+	$(PYTEST) -v backend/tests/test_llm_integration.py -m integration --timeout=120
 
 ui-test:
 	npm --prefix ui-tests test -- --config=playwright.config.js

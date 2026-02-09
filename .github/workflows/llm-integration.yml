@@ -1,0 +1,44 @@
+name: LLM Integration Tests
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "backend/app/ollama.py"
+      - "backend/tests/test_llm_integration.py"
+      - ".github/workflows/llm-integration.yml"
+
+jobs:
+  llm-integration-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Start Ollama service
+        uses: pydantic/ollama-action@v3
+        with:
+          models: qwen3:1.7b
+
+      - name: Verify Ollama is running
+        run: |
+          curl -f http://localhost:11434/api/tags || (echo "Ollama not responding" && exit 1)
+
+      - name: Run integration tests
+        env:
+          OLLAMA_URL: http://localhost:11434
+          OLLAMA_MODEL: qwen3:1.7b
+        run: |
+          pytest backend/tests/test_llm_integration.py -v -m integration --timeout=120

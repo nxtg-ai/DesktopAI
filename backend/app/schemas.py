@@ -4,10 +4,29 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class UiaElement(BaseModel):
+    automation_id: str = ""
+    name: str = ""
+    control_type: str = ""
+    class_name: str = ""
+    bounding_rect: Optional[List[int]] = None  # [x, y, width, height]
+    is_enabled: bool = True
+    is_offscreen: bool = False
+    patterns: List[str] = Field(default_factory=list)
+    value: Optional[str] = None
+    toggle_state: Optional[str] = None
+    children: List["UiaElement"] = Field(default_factory=list)
+
+
+UiaElement.model_rebuild()
+
+
 class UiaSnapshot(BaseModel):
     focused_name: str = ""
     control_type: str = ""
     document_text: str = ""
+    focused_element: Optional[UiaElement] = None
+    window_tree: List[UiaElement] = Field(default_factory=list)
 
 
 class WindowEvent(BaseModel):

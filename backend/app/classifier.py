@@ -74,7 +74,11 @@ class ActivityClassifier:
             "Return only the category name.\n\n"
             f"Context: {context}"
         )
-        response = await self._ollama.generate(prompt)
+        if hasattr(self._ollama, "chat"):
+            messages = [{"role": "user", "content": prompt}]
+            response = await self._ollama.chat(messages)
+        else:
+            response = await self._ollama.generate(prompt)
         if not response:
             return None
         return response.strip().lower().split()[0]

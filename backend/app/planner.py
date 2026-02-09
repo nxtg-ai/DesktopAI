@@ -5,6 +5,22 @@ from typing import Any, List, Optional, Protocol
 
 from .schemas import TaskAction, TaskStepPlan
 
+PLAN_JSON_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string"},
+            "description": {"type": "string"},
+            "parameters": {"type": "object"},
+            "irreversible": {"type": "boolean"},
+            "preconditions": {"type": "array", "items": {"type": "string"}},
+            "postconditions": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["action", "description"],
+    },
+}
+
 PLANNER_MODE_DETERMINISTIC = "deterministic"
 PLANNER_MODE_AUTO = "auto"
 PLANNER_MODE_OLLAMA_REQUIRED = "ollama_required"
@@ -150,8 +166,19 @@ class OllamaAutonomyPlanner:
             return await self._fallback.build_plan(objective)
 
         prompt = _build_plan_prompt(objective)
-        response = await self._ollama.generate(prompt)
-        parsed = self._parse_response(response or "")
+        response = None
+        used_structured_output = False
+
+        if hasattr(self._ollama, "chat"):
+            messages = [{"role": "user", "content": prompt}]
+            response = await self._ollama.chat(messages, format=PLAN_JSON_SCHEMA)
+            used_structured_output = True
+
+        if response is None:
+            response = await self._ollama.generate(prompt)
+            used_structured_output = False
+
+        parsed = self._parse_response(response or "", used_structured_output=used_structured_output)
         if not parsed:
             if self._mode == PLANNER_MODE_OLLAMA_REQUIRED:
                 raise RuntimeError("ollama planner required but returned invalid plan JSON")
@@ -159,11 +186,11 @@ class OllamaAutonomyPlanner:
 
         return parsed
 
-    def _parse_response(self, response: str) -> List[TaskStepPlan]:
+    def _parse_response(self, response: str, used_structured_output: bool = False) -> List[TaskStepPlan]:
         text = (response or "").strip()
         if not text:
             return []
-        if text.startswith("```"):
+        if not used_structured_output and text.startswith("```"):
             lines = text.splitlines()
             if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
                 text = "\n".join(lines[1:-1]).strip()

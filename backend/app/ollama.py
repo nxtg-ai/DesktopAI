@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -162,6 +163,59 @@ class OllamaClient:
             return None, status_code, "POST /api/generate returned empty response"
         return response_text, status_code, None
 
+    async def _chat_once(
+        self,
+        messages: list[dict],
+        model: str,
+        timeout_s: float = 30.0,
+        format: Optional[dict] = None,
+    ) -> tuple[Optional[str], Optional[int], Optional[str]]:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+        }
+        if format is not None:
+            payload["format"] = format
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_s) as client:
+                resp = await client.post(f"{self.base_url}/api/chat", json=payload)
+        except Exception as exc:
+            return None, None, f"POST /api/chat failed: {self._format_exception(exc)}"
+
+        status_code = resp.status_code
+        try:
+            data = resp.json()
+        except Exception as exc:
+            if status_code != 200:
+                return None, status_code, f"POST /api/chat returned status {status_code}"
+            return None, status_code, f"POST /api/chat returned invalid JSON: {exc}"
+
+        model_error = None
+        if isinstance(data, dict):
+            model_error = data.get("error") or data.get("message")
+            if model_error is not None:
+                model_error = str(model_error).strip()
+
+        if status_code != 200:
+            error_detail = f"POST /api/chat returned status {status_code}"
+            if model_error:
+                error_detail = f"{error_detail}: {model_error}"
+            return None, status_code, error_detail
+
+        if model_error:
+            return None, status_code, f"POST /api/chat returned error: {model_error}"
+
+        message = data.get("message") if isinstance(data, dict) else None
+        if not isinstance(message, dict):
+            return None, status_code, "POST /api/chat returned invalid message structure"
+
+        response_text = message.get("content")
+        if not isinstance(response_text, str) or not response_text.strip():
+            return None, status_code, "POST /api/chat returned empty response"
+        return response_text, status_code, None
+
     async def available(self) -> bool:
         now = time.monotonic()
         if now - self._last_check < self._ttl:
@@ -246,7 +300,7 @@ class OllamaClient:
             timeout_s=timeout_s,
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
-        if error_detail is None:
+        if error_detail is None and response_text is not None:
             self._record_health(source="generate_probe", available=True, status_code=status_code)
             return {
                 "ok": True,
@@ -268,7 +322,7 @@ class OllamaClient:
                     timeout_s=timeout_s,
                 )
                 elapsed_ms = int((time.monotonic() - started) * 1000)
-                if fallback_error is None:
+                if fallback_error is None and fallback_text is not None:
                     self.model = fallback_model
                     self._record_health(
                         source="generate_probe_fallback",
@@ -304,3 +358,112 @@ class OllamaClient:
             "response_chars": 0,
             "used_fallback": False,
         }
+
+    async def chat(
+        self,
+        messages: list[dict],
+        *,
+        model: Optional[str] = None,
+        format: Optional[dict] = None,
+        timeout_s: float = 30.0,
+    ) -> Optional[str]:
+        active_model = model or self.model
+        response_text, status_code, error_detail = await self._chat_once(
+            messages, active_model, timeout_s=timeout_s, format=format
+        )
+        if error_detail is None:
+            self._record_health(source="chat", available=True, status_code=status_code)
+            return response_text
+
+        if self._is_model_not_found_error(error_detail):
+            available_models = await self._list_models()
+            fallback_model = self._pick_fallback_model(available_models, unavailable_model=active_model)
+            if fallback_model:
+                fallback_text, fallback_status, fallback_error = await self._chat_once(
+                    messages, fallback_model, timeout_s=timeout_s, format=format
+                )
+                if fallback_error is None:
+                    if model is None:
+                        self.model = fallback_model
+                    self._record_health(
+                        source="chat_fallback",
+                        available=True,
+                        status_code=fallback_status,
+                    )
+                    return fallback_text
+                self._record_health(
+                    source="chat_fallback",
+                    available=False,
+                    status_code=fallback_status,
+                    error=fallback_error,
+                )
+                return None
+            error_detail = f"{error_detail}; no fallback model available"
+
+        self._record_health(
+            source="chat",
+            available=False,
+            status_code=status_code,
+            error=error_detail,
+        )
+        return None
+
+    async def chat_with_images(
+        self,
+        messages: list[dict],
+        images: list[bytes],
+        *,
+        model: Optional[str] = None,
+        timeout_s: float = 60.0,
+    ) -> Optional[str]:
+        if not messages or not images:
+            return None
+
+        messages_copy = [msg.copy() for msg in messages]
+        encoded_images = [base64.b64encode(img).decode("utf-8") for img in images]
+
+        for msg in reversed(messages_copy):
+            if msg.get("role") == "user":
+                msg["images"] = encoded_images
+                break
+
+        active_model = model or self.model
+        response_text, status_code, error_detail = await self._chat_once(
+            messages_copy, active_model, timeout_s=timeout_s
+        )
+        if error_detail is None:
+            self._record_health(source="chat_vision", available=True, status_code=status_code)
+            return response_text
+
+        if self._is_model_not_found_error(error_detail):
+            available_models = await self._list_models()
+            fallback_model = self._pick_fallback_model(available_models, unavailable_model=active_model)
+            if fallback_model:
+                fallback_text, fallback_status, fallback_error = await self._chat_once(
+                    messages_copy, fallback_model, timeout_s=timeout_s
+                )
+                if fallback_error is None:
+                    if model is None:
+                        self.model = fallback_model
+                    self._record_health(
+                        source="chat_vision_fallback",
+                        available=True,
+                        status_code=fallback_status,
+                    )
+                    return fallback_text
+                self._record_health(
+                    source="chat_vision_fallback",
+                    available=False,
+                    status_code=fallback_status,
+                    error=fallback_error,
+                )
+                return None
+            error_detail = f"{error_detail}; no fallback model available"
+
+        self._record_health(
+            source="chat_vision",
+            available=False,
+            status_code=status_code,
+            error=error_detail,
+        )
+        return None
