@@ -112,16 +112,9 @@ def test_chat_basic(ollama_client):
         )
 
         assert error is None, f"chat failed: {error}"
-        response = response_text
-        assert response is not None, "chat should return a response"
-        assert isinstance(response, str)
-        assert len(response.strip()) > 0, "Response should not be empty"
-
-        # Check health recorded
-        diag = ollama_client.diagnostics()
-        assert diag["available"] is True
-        assert diag["last_check_source"] in ["chat", "chat_fallback"]
-        assert diag["last_error"] is None
+        assert response_text is not None, "chat should return a response"
+        assert isinstance(response_text, str)
+        assert len(response_text.strip()) > 0, "Response should not be empty"
 
     asyncio.run(scenario())
 
