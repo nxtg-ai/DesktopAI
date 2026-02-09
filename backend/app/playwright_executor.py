@@ -61,7 +61,7 @@ class PlaywrightExecutor(TaskActionExecutor):
                 f"Failed to connect to browser at {self._cdp_endpoint}: {exc}"
             ) from exc
 
-    async def execute(self, action: TaskAction, *, objective: str) -> ActionExecutionResult:
+    async def execute(self, action: TaskAction, *, objective: str, desktop_context=None) -> ActionExecutionResult:
         """Execute browser action using Playwright.
 
         Supported actions:

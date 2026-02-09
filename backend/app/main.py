@@ -140,12 +140,15 @@ planner = OllamaAutonomyPlanner(
     ollama=ollama,
     fallback=deterministic_planner,
     mode=settings.autonomy_planner_mode,
+    state_store=store,
 )
 action_executor = build_action_executor(
     mode=settings.action_executor_mode,
     powershell_executable=settings.action_executor_powershell,
     timeout_s=settings.action_executor_timeout_s,
     default_compose_text=settings.action_executor_default_compose_text,
+    state_store=store,
+    ollama=ollama,
 )
 
 
@@ -161,6 +164,7 @@ tasks = TaskOrchestrator(
     action_executor=action_executor,
     executor_retry_count=settings.action_executor_retry_count,
     executor_retry_delay_ms=settings.action_executor_retry_delay_ms,
+    state_store=store,
 )
 
 
@@ -288,6 +292,26 @@ async def get_state() -> StateResponse:
         idle_since=idle_since,
         category=category,
     )
+
+
+@app.get("/api/state/snapshot")
+async def get_desktop_snapshot() -> dict:
+    from .desktop_context import DesktopContext
+    current = await store.current()
+    if current is None:
+        return {"context": None}
+    ctx = DesktopContext.from_event(current)
+    if ctx is None:
+        return {"context": None}
+    return {
+        "context": {
+            "window_title": ctx.window_title,
+            "process_exe": ctx.process_exe,
+            "timestamp": ctx.timestamp.isoformat(),
+            "uia_summary": ctx.uia_summary,
+            "screenshot_available": ctx.screenshot_b64 is not None,
+        }
+    }
 
 
 @app.get("/api/events")

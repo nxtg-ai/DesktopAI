@@ -60,6 +60,7 @@ class Settings:
 
     ollama_url: str = _env("OLLAMA_URL", "http://localhost:11434")
     ollama_model: str = _env("OLLAMA_MODEL", "llama3.1:8b")
+    ollama_vision_model: str = _env("OLLAMA_VISION_MODEL", "")
     ollama_classifier_model: str = _env("OLLAMA_CLASSIFIER_MODEL", "")
     ollama_planner_model: str = _env("OLLAMA_PLANNER_MODEL", "")
     ollama_executor_model: str = _env("OLLAMA_EXECUTOR_MODEL", "")

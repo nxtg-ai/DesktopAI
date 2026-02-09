@@ -34,11 +34,13 @@ class TaskOrchestrator:
         action_executor: Optional[TaskActionExecutor] = None,
         executor_retry_count: int = 1,
         executor_retry_delay_ms: int = 50,
+        state_store=None,
     ) -> None:
         self._on_task_update = on_task_update
         self._action_executor = action_executor or SimulatedTaskActionExecutor()
         self._executor_retry_count = max(1, int(executor_retry_count))
         self._executor_retry_delay_ms = max(0, int(executor_retry_delay_ms))
+        self._state_store = state_store
         self._tasks: Dict[str, TaskRecord] = {}
         self._task_order: List[str] = []
         self._update_jobs: Set[asyncio.Task] = set()
@@ -324,10 +326,22 @@ class TaskOrchestrator:
                     return self._clone_task(task)
 
     async def _execute_action(self, action: TaskAction, *, objective: str) -> ActionExecutionResult:
+        desktop_context = None
+        if self._state_store:
+            try:
+                event = await self._state_store.current()
+                if event:
+                    from .desktop_context import DesktopContext
+                    desktop_context = DesktopContext.from_event(event)
+            except Exception:
+                pass
+
         last: Optional[ActionExecutionResult] = None
         for attempt in range(1, self._executor_retry_count + 1):
             try:
-                execution = await self._action_executor.execute(action, objective=objective)
+                execution = await self._action_executor.execute(
+                    action, objective=objective, desktop_context=desktop_context
+                )
             except Exception as exc:
                 execution = ActionExecutionResult(
                     ok=False,

@@ -148,6 +148,77 @@ def test_ollama_planner_set_mode_validates_values():
     asyncio.run(scenario())
 
 
+class _ChatCapturingOllama:
+    def __init__(self, available: bool, response: str | None):
+        self._available = available
+        self._response = response
+        self.chat_calls = []
+
+    async def available(self) -> bool:
+        return self._available
+
+    async def generate(self, prompt: str) -> str | None:
+        return self._response
+
+    async def chat(self, messages: list, format=None) -> str | None:
+        self.chat_calls.append(messages)
+        return self._response
+
+
+def test_ollama_planner_includes_desktop_context_in_prompt():
+    async def scenario():
+        from datetime import datetime, timezone
+        from unittest.mock import AsyncMock
+        from app.schemas import WindowEvent
+
+        event = WindowEvent(
+            hwnd="0x1234",
+            title="Outlook - Inbox",
+            process_exe="outlook.exe",
+            pid=100,
+            timestamp=datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        mock_store = AsyncMock()
+        mock_store.current = AsyncMock(return_value=event)
+
+        ollama = _ChatCapturingOllama(
+            available=True,
+            response='[{"action":"observe_desktop","description":"obs"},{"action":"verify_outcome","description":"ver"}]',
+        )
+        planner = OllamaAutonomyPlanner(
+            ollama=ollama,
+            mode="auto",
+            state_store=mock_store,
+        )
+        steps = await planner.build_plan("reply to email")
+        assert len(steps) == 2
+        assert ollama.chat_calls
+        prompt = ollama.chat_calls[0][0]["content"]
+        assert "Outlook - Inbox" in prompt
+        assert "outlook.exe" in prompt
+
+    asyncio.run(scenario())
+
+
+def test_ollama_planner_works_without_state_store():
+    async def scenario():
+        ollama = _ChatCapturingOllama(
+            available=True,
+            response='[{"action":"observe_desktop","description":"obs"},{"action":"verify_outcome","description":"ver"}]',
+        )
+        planner = OllamaAutonomyPlanner(
+            ollama=ollama,
+            mode="auto",
+        )
+        steps = await planner.build_plan("check desktop")
+        assert len(steps) == 2
+        assert ollama.chat_calls
+        prompt = ollama.chat_calls[0][0]["content"]
+        assert "Current Desktop State" not in prompt
+
+    asyncio.run(scenario())
+
+
 def test_autonomous_runner_uses_injected_planner_steps():
     async def scenario():
         orchestrator = TaskOrchestrator()

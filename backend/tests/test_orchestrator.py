@@ -166,3 +166,120 @@ def test_approve_resumes_waiting_task_and_completes():
         assert all(step.status == "succeeded" for step in completed.steps)
 
     asyncio.run(scenario())
+
+
+# --- DesktopContext capture tests ---
+
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock
+
+from app.action_executor import ActionExecutionResult, TaskActionExecutor
+from app.schemas import WindowEvent
+
+
+class _ContextCapturingExecutor(TaskActionExecutor):
+    mode = "test-capture"
+
+    def __init__(self):
+        self.captured_contexts = []
+
+    async def execute(self, action: TaskAction, *, objective: str, desktop_context=None) -> ActionExecutionResult:
+        self.captured_contexts.append(desktop_context)
+        return ActionExecutionResult(
+            ok=True,
+            result={"executor": self.mode, "action": action.action, "ok": True},
+        )
+
+    def status(self):
+        return {"mode": self.mode, "available": True}
+
+
+def test_orchestrator_captures_context_from_state_store():
+    async def scenario():
+        event = WindowEvent(
+            hwnd="0x1234",
+            title="Outlook - Inbox",
+            process_exe="outlook.exe",
+            pid=100,
+            timestamp=datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        mock_store = AsyncMock()
+        mock_store.current = AsyncMock(return_value=event)
+
+        executor = _ContextCapturingExecutor()
+        orchestrator = TaskOrchestrator(
+            action_executor=executor,
+            state_store=mock_store,
+        )
+        created = await orchestrator.create_task("Test context capture")
+        await orchestrator.set_plan(
+            created.task_id,
+            TaskPlanRequest(
+                steps=[
+                    TaskStepPlan(
+                        action=TaskAction(action="observe_desktop", description="observe"),
+                    )
+                ]
+            ),
+        )
+        result = await orchestrator.run_task(created.task_id)
+        assert result.status == "completed"
+        assert len(executor.captured_contexts) == 1
+        ctx = executor.captured_contexts[0]
+        assert ctx is not None
+        assert ctx.window_title == "Outlook - Inbox"
+        assert ctx.process_exe == "outlook.exe"
+
+    asyncio.run(scenario())
+
+
+def test_orchestrator_works_without_state_store():
+    async def scenario():
+        executor = _ContextCapturingExecutor()
+        orchestrator = TaskOrchestrator(action_executor=executor)
+        created = await orchestrator.create_task("No state store")
+        await orchestrator.set_plan(
+            created.task_id,
+            TaskPlanRequest(
+                steps=[
+                    TaskStepPlan(
+                        action=TaskAction(action="observe_desktop", description="observe"),
+                    )
+                ]
+            ),
+        )
+        result = await orchestrator.run_task(created.task_id)
+        assert result.status == "completed"
+        assert len(executor.captured_contexts) == 1
+        assert executor.captured_contexts[0] is None
+
+    asyncio.run(scenario())
+
+
+def test_orchestrator_handles_empty_state_store():
+    async def scenario():
+        mock_store = AsyncMock()
+        mock_store.current = AsyncMock(return_value=None)
+
+        executor = _ContextCapturingExecutor()
+        orchestrator = TaskOrchestrator(
+            action_executor=executor,
+            state_store=mock_store,
+        )
+        created = await orchestrator.create_task("Empty state store")
+        await orchestrator.set_plan(
+            created.task_id,
+            TaskPlanRequest(
+                steps=[
+                    TaskStepPlan(
+                        action=TaskAction(action="observe_desktop", description="observe"),
+                    )
+                ]
+            ),
+        )
+        result = await orchestrator.run_task(created.task_id)
+        assert result.status == "completed"
+        assert len(executor.captured_contexts) == 1
+        assert executor.captured_contexts[0] is None
+
+    asyncio.run(scenario())

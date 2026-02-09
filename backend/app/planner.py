@@ -142,11 +142,13 @@ class OllamaAutonomyPlanner:
         ollama,
         fallback: Optional[AutonomyPlanner] = None,
         mode: str = PLANNER_MODE_AUTO,
+        state_store=None,
     ) -> None:
         normalized_mode = normalize_planner_mode(mode)
         self._ollama = ollama
         self._fallback = fallback or DeterministicAutonomyPlanner()
         self._mode = normalized_mode
+        self._state_store = state_store
 
     @property
     def mode(self) -> str:
@@ -165,7 +167,19 @@ class OllamaAutonomyPlanner:
                 raise RuntimeError("ollama planner required but Ollama is unavailable")
             return await self._fallback.build_plan(objective)
 
-        prompt = _build_plan_prompt(objective)
+        desktop_context_text = ""
+        if self._state_store:
+            try:
+                event = await self._state_store.current()
+                if event:
+                    from .desktop_context import DesktopContext
+                    ctx = DesktopContext.from_event(event)
+                    if ctx:
+                        desktop_context_text = f"\n\nCurrent Desktop State:\n{ctx.to_llm_prompt()}"
+            except Exception:
+                pass
+
+        prompt = _build_plan_prompt(objective, desktop_context=desktop_context_text)
         response = None
         used_structured_output = False
 
@@ -273,7 +287,7 @@ def _as_text_list(value: Any) -> List[str]:
     return []
 
 
-def _build_plan_prompt(objective: str) -> str:
+def _build_plan_prompt(objective: str, desktop_context: str = "") -> str:
     return (
         "Create a deterministic desktop action plan for this objective. "
         "Return JSON only, with no markdown.\n\n"
@@ -285,6 +299,7 @@ def _build_plan_prompt(objective: str) -> str:
         "- irreversible: boolean (optional, true only for send_or_submit when needed)\n"
         "- preconditions: array of strings\n"
         "- postconditions: array of strings\n\n"
+        f"{desktop_context}"
         "Objective:\n"
         f"{objective}"
     )

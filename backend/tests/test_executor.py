@@ -13,7 +13,7 @@ from app.schemas import TaskAction, TaskPlanRequest, TaskStepPlan
 class _FailingExecutor(TaskActionExecutor):
     mode = "test-failing"
 
-    async def execute(self, action: TaskAction, *, objective: str) -> ActionExecutionResult:
+    async def execute(self, action: TaskAction, *, objective: str, desktop_context=None) -> ActionExecutionResult:
         return ActionExecutionResult(
             ok=False,
             error=f"forced failure for {action.action}",
@@ -32,7 +32,7 @@ class _FlakyExecutor(TaskActionExecutor):
         self.error = error
         self.calls = 0
 
-    async def execute(self, action: TaskAction, *, objective: str) -> ActionExecutionResult:
+    async def execute(self, action: TaskAction, *, objective: str, desktop_context=None) -> ActionExecutionResult:
         self.calls += 1
         if self.calls <= self.failures_before_success:
             return ActionExecutionResult(
@@ -217,3 +217,298 @@ def test_windows_executor_preflight_reports_success_on_windows(monkeypatch):
         assert all(item["ok"] is True for item in report["checks"])
 
     asyncio.run(scenario())
+
+
+# --- DesktopContext integration tests ---
+
+import json
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock
+
+from app.desktop_context import DesktopContext
+from app.schemas import WindowEvent
+
+
+def _make_context(**kwargs):
+    defaults = dict(
+        window_title="Outlook - Inbox",
+        process_exe="outlook.exe",
+        timestamp=datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc),
+        uia_summary='Focused: Reply Button\nControl: Button',
+        screenshot_b64=None,
+    )
+    defaults.update(kwargs)
+    return DesktopContext(**defaults)
+
+
+def test_simulated_executor_accepts_desktop_context():
+    async def scenario():
+        from app.action_executor import SimulatedTaskActionExecutor
+        executor = SimulatedTaskActionExecutor()
+        ctx = _make_context()
+        result = await executor.execute(
+            TaskAction(action="observe_desktop", description="test"),
+            objective="test",
+            desktop_context=ctx,
+        )
+        assert result.ok is True
+        assert result.result["action"] == "observe_desktop"
+
+    asyncio.run(scenario())
+
+
+def test_windows_executor_observe_desktop_returns_context(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr(
+            "app.action_executor.shutil.which",
+            lambda _name: "C:/Windows/System32/powershell.exe",
+        )
+        executor = WindowsPowerShellActionExecutor(powershell_executable="powershell.exe")
+        ctx = _make_context(uia_summary="Focused: Reply Button")
+        result = await executor.execute(
+            TaskAction(action="observe_desktop", description="test"),
+            objective="test",
+            desktop_context=ctx,
+        )
+        assert result.ok is True
+        output = json.loads(result.result["output"])
+        assert output["window_title"] == "Outlook - Inbox"
+        assert output["process"] == "outlook.exe"
+        assert "Reply Button" in output["uia_summary"]
+        assert output["screenshot_available"] is False
+
+    asyncio.run(scenario())
+
+
+def test_windows_executor_observe_desktop_without_context_falls_through(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr(
+            "app.action_executor.shutil.which",
+            lambda _name: "C:/Windows/System32/powershell.exe",
+        )
+
+        async def fake_run(_script):
+            return "Test Window Title"
+
+        executor = WindowsPowerShellActionExecutor(powershell_executable="powershell.exe")
+        monkeypatch.setattr(executor, "_run_powershell", fake_run)
+        result = await executor.execute(
+            TaskAction(action="observe_desktop", description="test"),
+            objective="test",
+            desktop_context=None,
+        )
+        assert result.ok is True
+        assert result.result["output"] == "Test Window Title"
+
+    asyncio.run(scenario())
+
+
+def test_windows_executor_compose_text_with_ollama(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr(
+            "app.action_executor.shutil.which",
+            lambda _name: "C:/Windows/System32/powershell.exe",
+        )
+        mock_ollama = AsyncMock()
+        mock_ollama.chat = AsyncMock(return_value="Dear colleague, thank you for your email.")
+        executor = WindowsPowerShellActionExecutor(
+            powershell_executable="powershell.exe",
+            ollama=mock_ollama,
+        )
+        ctx = _make_context()
+
+        ps_output = []
+
+        async def fake_run(script):
+            ps_output.append(script)
+            return "sent-keys:ok"
+
+        monkeypatch.setattr(executor, "_run_powershell", fake_run)
+        result = await executor.execute(
+            TaskAction(action="compose_text", description="test"),
+            objective="reply to email",
+            desktop_context=ctx,
+        )
+        assert result.ok is True
+        mock_ollama.chat.assert_called_once()
+        # The composed text should appear in the SendKeys script
+        assert ps_output
+        assert "colleague" in ps_output[0] or "thank you" in ps_output[0]
+
+    asyncio.run(scenario())
+
+
+def test_windows_executor_compose_text_falls_back_without_ollama(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr(
+            "app.action_executor.shutil.which",
+            lambda _name: "C:/Windows/System32/powershell.exe",
+        )
+        executor = WindowsPowerShellActionExecutor(powershell_executable="powershell.exe")
+
+        ps_output = []
+
+        async def fake_run(script):
+            ps_output.append(script)
+            return "sent-keys:ok"
+
+        monkeypatch.setattr(executor, "_run_powershell", fake_run)
+        result = await executor.execute(
+            TaskAction(action="compose_text", description="test"),
+            objective="reply to email",
+            desktop_context=_make_context(),
+        )
+        assert result.ok is True
+        # Should use default text since no ollama
+        assert ps_output
+        assert "Draft generated by DesktopAI" in ps_output[0]
+
+    asyncio.run(scenario())
+
+
+def test_windows_executor_compose_text_uses_vision_with_screenshot(monkeypatch):
+    import base64
+    async def scenario():
+        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr(
+            "app.action_executor.shutil.which",
+            lambda _name: "C:/Windows/System32/powershell.exe",
+        )
+        mock_ollama = AsyncMock()
+        mock_ollama.chat_with_images = AsyncMock(return_value="Vision-generated text.")
+        mock_ollama.chat = AsyncMock(return_value="Text-only fallback.")
+        executor = WindowsPowerShellActionExecutor(
+            powershell_executable="powershell.exe",
+            ollama=mock_ollama,
+        )
+        b64 = base64.b64encode(b"fake-jpeg").decode()
+        ctx = _make_context(screenshot_b64=b64)
+
+        async def fake_run(script):
+            return "sent-keys:ok"
+
+        monkeypatch.setattr(executor, "_run_powershell", fake_run)
+        result = await executor.execute(
+            TaskAction(action="compose_text", description="test"),
+            objective="reply to email",
+            desktop_context=ctx,
+        )
+        assert result.ok is True
+        mock_ollama.chat_with_images.assert_called_once()
+        mock_ollama.chat.assert_not_called()
+
+    asyncio.run(scenario())
+
+
+def test_windows_executor_verify_outcome_detects_change(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr(
+            "app.action_executor.shutil.which",
+            lambda _name: "C:/Windows/System32/powershell.exe",
+        )
+        after_event = WindowEvent(
+            hwnd="0x1234",
+            title="Outlook - Sent",
+            process_exe="outlook.exe",
+            pid=100,
+            timestamp=datetime(2025, 6, 1, 12, 0, 1, tzinfo=timezone.utc),
+        )
+        mock_store = AsyncMock()
+        mock_store.current = AsyncMock(return_value=after_event)
+        executor = WindowsPowerShellActionExecutor(
+            powershell_executable="powershell.exe",
+            state_store=mock_store,
+        )
+        before_ctx = _make_context(window_title="Outlook - Inbox")
+        result = await executor.execute(
+            TaskAction(action="verify_outcome", description="test"),
+            objective="send email",
+            desktop_context=before_ctx,
+        )
+        assert result.ok is True
+        assert "Outlook - Sent" in result.result["output"]
+        assert "window changed" in result.result["output"]
+
+    asyncio.run(scenario())
+
+
+def test_windows_executor_verify_outcome_no_change(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr(
+            "app.action_executor.shutil.which",
+            lambda _name: "C:/Windows/System32/powershell.exe",
+        )
+        after_event = WindowEvent(
+            hwnd="0x1234",
+            title="Outlook - Inbox",
+            process_exe="outlook.exe",
+            pid=100,
+            timestamp=datetime(2025, 6, 1, 12, 0, 1, tzinfo=timezone.utc),
+        )
+        mock_store = AsyncMock()
+        mock_store.current = AsyncMock(return_value=after_event)
+        executor = WindowsPowerShellActionExecutor(
+            powershell_executable="powershell.exe",
+            state_store=mock_store,
+        )
+        before_ctx = _make_context(window_title="Outlook - Inbox", uia_summary="")
+        result = await executor.execute(
+            TaskAction(action="verify_outcome", description="test"),
+            objective="check email",
+            desktop_context=before_ctx,
+        )
+        assert result.ok is True
+        assert "no observable state change" in result.result["output"]
+
+    asyncio.run(scenario())
+
+
+def test_windows_executor_verify_outcome_without_state_store(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr(
+            "app.action_executor.shutil.which",
+            lambda _name: "C:/Windows/System32/powershell.exe",
+        )
+        executor = WindowsPowerShellActionExecutor(powershell_executable="powershell.exe")
+
+        async def fake_run(_script):
+            return "verified"
+
+        monkeypatch.setattr(executor, "_run_powershell", fake_run)
+        before_ctx = _make_context()
+        result = await executor.execute(
+            TaskAction(action="verify_outcome", description="test"),
+            objective="check email",
+            desktop_context=before_ctx,
+        )
+        assert result.ok is True
+        assert result.result["output"] == "verified"
+
+    asyncio.run(scenario())
+
+
+def test_build_action_executor_passes_state_store_and_ollama(monkeypatch):
+    monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+    monkeypatch.setattr(
+        "app.action_executor.shutil.which",
+        lambda _name: "C:/Windows/System32/powershell.exe",
+    )
+    mock_store = object()
+    mock_ollama = object()
+    executor = build_action_executor(
+        mode="windows",
+        powershell_executable="powershell.exe",
+        timeout_s=20,
+        state_store=mock_store,
+        ollama=mock_ollama,
+    )
+    assert executor.mode == "windows-powershell"
+    assert executor._state_store is mock_store
+    assert executor._ollama is mock_ollama
