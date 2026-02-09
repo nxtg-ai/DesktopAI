@@ -5,10 +5,6 @@ on:
     branches:
       - main
       - master
-    paths:
-      - "backend/app/ollama.py"
-      - "backend/tests/test_llm_integration.py"
-      - ".github/workflows/llm-integration.yml"
 
 jobs:
   llm-integration-test:
@@ -27,14 +23,22 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 
-      - name: Start Ollama service
-        uses: pydantic/ollama-action@v3
-        with:
-          models: qwen3:1.7b
+      - name: Install and start Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:11434/api/tags > /dev/null && break
+            sleep 1
+          done
+
+      - name: Pull model
+        run: ollama pull qwen3:1.7b
 
       - name: Verify Ollama is running
         run: |
-          curl -f http://localhost:11434/api/tags || (echo "Ollama not responding" && exit 1)
+          curl -f http://localhost:11434/api/tags
+          ollama list
 
       - name: Run integration tests
         env:
