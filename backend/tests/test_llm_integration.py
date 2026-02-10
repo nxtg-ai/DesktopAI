@@ -13,9 +13,7 @@ import json
 import os
 
 import pytest
-
 from app.ollama import OllamaClient
-
 
 # Environment configuration
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")

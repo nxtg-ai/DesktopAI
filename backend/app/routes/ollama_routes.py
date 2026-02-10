@@ -4,17 +4,18 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
+import app.deps as _deps
+
 from ..config import settings
 from ..deps import (
-    _dump,
+    PLANNER_SOURCE_CONFIG_DEFAULT,
+    PLANNER_SOURCE_RUNTIME_OVERRIDE,
+    RUNTIME_SETTING_OLLAMA_MODEL,
     _ollama_status_payload,
     classifier,
     db,
     ollama,
     store,
-    PLANNER_SOURCE_CONFIG_DEFAULT,
-    PLANNER_SOURCE_RUNTIME_OVERRIDE,
-    RUNTIME_SETTING_OLLAMA_MODEL,
 )
 from ..schemas import (
     ClassifyRequest,
@@ -22,7 +23,6 @@ from ..schemas import (
     OllamaProbeRequest,
     WindowEvent,
 )
-import app.deps as _deps
 
 router = APIRouter()
 

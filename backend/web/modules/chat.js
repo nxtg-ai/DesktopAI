@@ -1,4 +1,4 @@
-/** Chat message handling, typing indicator, and context bar. */
+/** Chat message handling, typing indicator, context bar, and conversation management. */
 
 import {
   appState, chatStatusEl, chatContextIndicatorEl, chatMessagesEl, chatWelcomeEl,
@@ -66,6 +66,35 @@ export function updateChatContextBar(ctx) {
   chatContextIndicatorEl.classList.add("live");
 }
 
+export async function refreshRecipeSuggestions() {
+  const container = document.getElementById("recipe-suggestions");
+  if (!container) return;
+  try {
+    const resp = await fetch("/api/recipes");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    container.innerHTML = "";
+    for (const recipe of (data.recipes || [])) {
+      const btn = document.createElement("button");
+      btn.className = "chat-suggestion recipe-chip";
+      btn.textContent = recipe.name;
+      btn.title = recipe.description;
+      btn.addEventListener("click", () => void sendChatMessage(recipe.keywords[0] || recipe.name));
+      container.appendChild(btn);
+    }
+  } catch { /* ignore */ }
+}
+
+export function startNewChat() {
+  appState.conversationId = null;
+  chatMessagesEl.innerHTML = "";
+  if (chatWelcomeEl) chatWelcomeEl.style.display = "";
+  chatInputEl.value = "";
+  const titleEl = document.getElementById("chat-conversation-title");
+  if (titleEl) titleEl.textContent = "New Conversation";
+  queueTelemetry("chat_new", "new chat started");
+}
+
 export async function sendChatMessage(text) {
   const message = (text || "").trim();
   if (!message || appState.chatSending) return;
@@ -79,7 +108,9 @@ export async function sendChatMessage(text) {
   showChatTyping();
   queueTelemetry("chat_sent", "chat message sent", { chars: message.length });
   try {
-    const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, allow_actions: true }) });
+    const payload = { message, allow_actions: true };
+    if (appState.conversationId) payload.conversation_id = appState.conversationId;
+    const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await resp.json();
     hideChatTyping();
     if (!resp.ok) {
@@ -88,6 +119,14 @@ export async function sendChatMessage(text) {
       chatStatusEl.dataset.tone = "warn";
       queueTelemetry("chat_error", "chat request failed", { status: resp.status });
       return;
+    }
+    if (data.conversation_id) {
+      appState.conversationId = data.conversation_id;
+      const titleEl = document.getElementById("chat-conversation-title");
+      if (titleEl && !titleEl.dataset.set) {
+        titleEl.textContent = message.length > 40 ? message.slice(0, 40) + "\u2026" : message;
+        titleEl.dataset.set = "1";
+      }
     }
     appendChatMessage("agent", data.response, { source: data.source, action_triggered: data.action_triggered, run_id: data.run_id });
     chatStatusEl.textContent = "ready";

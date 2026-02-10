@@ -133,6 +133,7 @@ export const appState = {
   runtimeLogsCorrelatedSessionId: "",
   chatSending: false,
   lastVisionContext: null,
+  conversationId: null,
 };
 
 // ── Telemetry Session ID ──

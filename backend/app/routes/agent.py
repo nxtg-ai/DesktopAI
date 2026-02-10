@@ -11,10 +11,12 @@ from ..deps import (
     _publish_autonomy_update,
     autonomy,
     bridge,
+    chat_memory,
     ollama,
     store,
     trajectory_store,
 )
+from ..recipes import match_recipe_by_keywords
 from ..schemas import AutonomyStartRequest, ChatRequest
 
 logger = logging.getLogger(__name__)
@@ -102,9 +104,34 @@ async def chat_endpoint(request: ChatRequest) -> dict:
 
     message = request.message.strip()
 
+    # Resolve or create conversation
+    conversation_id = request.conversation_id
+    if not conversation_id:
+        conversation_id = await chat_memory.create_conversation(title=message[:80])
+
+    # Load conversation history
+    history = await chat_memory.get_messages(conversation_id, limit=20)
+
     action_triggered = False
     run_id = None
-    if request.allow_actions and _is_action_intent(message):
+
+    # Check for recipe keyword match first
+    recipe = match_recipe_by_keywords(message) if request.allow_actions else None
+    if recipe:
+        try:
+            start_req = AutonomyStartRequest(
+                objective=recipe.description,
+                max_iterations=len(recipe.steps) + 5,
+                parallel_agents=1,
+                auto_approve_irreversible=False,
+            )
+            run = await autonomy.start(start_req)
+            action_triggered = True
+            run_id = run.run_id
+        except Exception as exc:
+            logger.warning("Recipe execution failed: %s", exc)
+
+    if not action_triggered and request.allow_actions and _is_action_intent(message):
         try:
             start_req = AutonomyStartRequest(
                 objective=message,
@@ -140,30 +167,48 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         except Exception as exc:
             logger.warning("Chat action trigger failed: %s", exc)
 
+    # Save user message
+    await chat_memory.save_message(
+        conversation_id, "user", message, desktop_context=ctx_dict
+    )
+
     is_available = await ollama.available()
     if is_available:
-        prompt_parts = [
+        # Build multi-turn messages array
+        llm_messages = []
+        system_parts = [
             "You are DesktopAI, an intelligent desktop assistant. "
             "Respond concisely and helpfully.",
         ]
         if ctx:
-            prompt_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
+            system_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
         if action_triggered:
-            prompt_parts.append(
+            system_parts.append(
                 f"\nI've started an autonomous task for: {message}. "
                 "Acknowledge this and describe what you're doing."
             )
-        prompt_parts.append(f"\nUser: {message}")
+        llm_messages.append({"role": "system", "content": "\n".join(system_parts)})
 
-        messages = [{"role": "user", "content": "\n".join(prompt_parts)}]
-        llm_response = await ollama.chat(messages)
+        # Add conversation history (excluding the just-saved user message)
+        for msg in history:
+            llm_messages.append({"role": msg["role"], "content": msg["content"]})
+
+        # Add new user message
+        llm_messages.append({"role": "user", "content": message})
+
+        llm_response = await ollama.chat(llm_messages)
         if llm_response and llm_response.strip():
+            response_text = llm_response.strip()
+            await chat_memory.save_message(
+                conversation_id, "assistant", response_text
+            )
             return {
-                "response": llm_response.strip(),
+                "response": response_text,
                 "source": "ollama",
                 "desktop_context": ctx_dict,
                 "action_triggered": action_triggered,
                 "run_id": run_id,
+                "conversation_id": conversation_id,
             }
 
     if action_triggered:
@@ -173,10 +218,13 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     else:
         response = _build_context_response(ctx)
 
+    await chat_memory.save_message(conversation_id, "assistant", response)
+
     return {
         "response": response,
         "source": "context",
         "desktop_context": ctx_dict,
         "action_triggered": action_triggered,
         "run_id": run_id,
+        "conversation_id": conversation_id,
     }

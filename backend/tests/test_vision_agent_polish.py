@@ -3,8 +3,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-from app.vision_agent import VisionAgent, AgentAction
+from app.vision_agent import VisionAgent
 
 
 @pytest.fixture

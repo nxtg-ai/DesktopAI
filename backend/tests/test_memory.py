@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pytest
-
 from app.memory import Trajectory, TrajectoryStore, format_trajectory_context
 from app.vision_agent import AgentAction, AgentObservation, AgentStep
-from datetime import datetime, timezone
 
 
 def _make_store() -> TrajectoryStore:

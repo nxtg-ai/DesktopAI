@@ -11,27 +11,28 @@ from dotenv import load_dotenv
 from fastapi.encoders import jsonable_encoder
 
 from .action_executor import build_action_executor
-from .autonomy import AutonomousRunner, VisionAutonomousRunner
+from .autonomy import AutonomousRunner
 from .bridge import CommandBridge
+from .chat_memory import ChatMemoryStore
 from .classifier import ActivityClassifier
 from .collector_status import CollectorStatusStore
 from .config import settings
 from .db import EventDatabase
 from .memory import TrajectoryStore
+from .notification_engine import NotificationEngine
+from .notifications import NotificationStore
 from .ollama import OllamaClient
 from .orchestrator import TaskOrchestrator
 from .planner import (
-    DeterministicAutonomyPlanner,
-    OllamaAutonomyPlanner,
     PLANNER_MODE_OLLAMA_REQUIRED,
     PLANNER_SUPPORTED_MODES,
+    DeterministicAutonomyPlanner,
+    OllamaAutonomyPlanner,
 )
-from .runtime_logs import RuntimeLogHandler, RuntimeLogStore
+from .runtime_logs import RuntimeLogStore
 from .schemas import (
-    AutonomyStartRequest,
     WindowEvent,
 )
-from .selftest import run_selftest
 from .state import StateStore
 from .ui_telemetry import UiTelemetryStore
 from .ws import WebSocketHub
@@ -71,6 +72,21 @@ collector_status = CollectorStatusStore()
 bridge = CommandBridge(default_timeout_s=settings.action_executor_bridge_timeout_s)
 trajectory_store = TrajectoryStore(
     path=settings.db_path.replace(".db", "-trajectories.db"),
+)
+chat_memory = ChatMemoryStore(
+    path=settings.db_path.replace(".db", "-chat.db"),
+    max_conversations=settings.chat_memory_max_conversations,
+    max_messages_per_conversation=settings.chat_memory_max_messages,
+)
+notification_store = NotificationStore(
+    path=settings.db_path.replace(".db", "-notifications.db"),
+    max_notifications=settings.notification_max_count,
+)
+notification_engine = NotificationEngine(
+    store=notification_store,
+    hub=hub,
+    enabled=settings.notifications_enabled,
+    idle_threshold_s=settings.notification_idle_threshold_s,
 )
 classifier = ActivityClassifier(
     ollama,

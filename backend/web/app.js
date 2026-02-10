@@ -43,13 +43,16 @@ import {
   setVoiceState, speakText, stopMeterLoop, ensureMicrophone, setupSpeechRecognition,
 } from "./modules/voice.js";
 
-import { sendChatMessage } from "./modules/chat.js";
+import { sendChatMessage, startNewChat, refreshRecipeSuggestions } from "./modules/chat.js";
 import { refreshAgentVision } from "./modules/agent-vision.js";
+import { refreshNotificationCount } from "./modules/notifications.js";
+import { initShortcuts } from "./modules/shortcuts.js";
 
 // ── Event Listeners ──
 
 // Chat
 chatSendBtn.addEventListener("click", () => void sendChatMessage(chatInputEl.value));
+document.getElementById("chat-new-btn")?.addEventListener("click", startNewChat);
 chatInputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendChatMessage(chatInputEl.value); }
 });
@@ -186,8 +189,34 @@ window.addEventListener("beforeunload", () => {
   flushTelemetryOnUnload();
 });
 
+// Theme toggle
+document.getElementById("theme-toggle")?.addEventListener("click", () => {
+  const html = document.documentElement;
+  const current = html.getAttribute("data-theme");
+  const next = current === "dark" ? "" : "dark";
+  if (next) {
+    html.setAttribute("data-theme", next);
+  } else {
+    html.removeAttribute("data-theme");
+  }
+  const icon = document.getElementById("theme-icon");
+  if (icon) icon.textContent = next === "dark" ? "\u2600" : "\u263E";
+  try { localStorage.setItem("desktopai-theme", next); } catch {}
+});
+
+// Restore theme from localStorage
+try {
+  const saved = localStorage.getItem("desktopai-theme");
+  if (saved === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+    const icon = document.getElementById("theme-icon");
+    if (icon) icon.textContent = "\u2600";
+  }
+} catch {}
+
 // ── Boot ──
 
+initShortcuts();
 setVoiceState("standby", "neutral");
 queueTelemetry("ui_boot", "ui booted", { user_agent: navigator.userAgent });
 fetchSnapshot();
@@ -201,4 +230,6 @@ refreshJourneyConsole();
 refreshRuntimeLogs();
 refreshReadinessStatus();
 refreshAgentVision();
+refreshNotificationCount();
+refreshRecipeSuggestions();
 startJourneyPolling();

@@ -13,6 +13,8 @@ os.environ.setdefault("CLASSIFIER_DEFAULT", "docs")
 os.environ.setdefault("UI_TELEMETRY_ARTIFACT_DIR", "/tmp/desktopai-ui-telemetry-test")
 
 from app.main import (
+    _restore_runtime_ollama_model,
+    _restore_runtime_planner_mode,
     app,
     autonomy,
     db,
@@ -23,10 +25,7 @@ from app.main import (
     settings,
     store,
     tasks,
-    _restore_runtime_ollama_model,
-    _restore_runtime_planner_mode,
 )
-
 
 client = TestClient(app)
 

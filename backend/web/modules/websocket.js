@@ -5,6 +5,7 @@ import { queueTelemetry } from "./telemetry.js";
 import { renderEvents, updateCurrent } from "./events.js";
 import { applyRunUiState } from "./autonomy.js";
 import { refreshAgentVision } from "./agent-vision.js";
+import { handleNotificationWsMessage } from "./notifications.js";
 
 function setStatus(text, tone) {
   statusEl.textContent = text;
@@ -65,6 +66,9 @@ export function connectWs() {
       }
       if (payload.type === "autonomy_run" && payload.run) {
         if (!appState.activeRunId || payload.run.run_id === appState.activeRunId) applyRunUiState(payload.run);
+      }
+      if (payload.type === "notification" && payload.notification) {
+        handleNotificationWsMessage(payload.notification);
       }
     } catch (err) {
       console.error("ws message error", err);

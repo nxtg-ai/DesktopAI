@@ -1,7 +1,7 @@
 import base64
 from datetime import datetime, timezone
 
-from app.desktop_context import DesktopContext, _MAX_UIA_SUMMARY_LEN
+from app.desktop_context import _MAX_UIA_SUMMARY_LEN, DesktopContext
 from app.schemas import UiaElement, UiaSnapshot, WindowEvent
 
 

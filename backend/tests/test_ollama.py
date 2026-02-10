@@ -1,8 +1,6 @@
 import asyncio
 import time
 
-import pytest
-
 from app.ollama import OllamaClient
 
 

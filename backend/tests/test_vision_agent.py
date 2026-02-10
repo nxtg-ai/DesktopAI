@@ -4,8 +4,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-from app.vision_agent import VisionAgent, AgentAction, AgentObservation, AgentStep
+from app.vision_agent import AgentAction, AgentObservation, VisionAgent
 
 
 @pytest.fixture

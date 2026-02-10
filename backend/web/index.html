@@ -15,7 +15,17 @@
           <h1>Live Desktop Context</h1>
           <p class="subhead">Foreground window activity streaming locally from Windows → WSL2.</p>
         </div>
-        <div class="status" id="status">connecting</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+            <span id="theme-icon">&#9790;</span>
+          </button>
+          <button id="notification-bell" class="notification-bell" aria-label="Notifications">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+            <span id="notification-count" class="notification-badge" hidden>0</span>
+          </button>
+          <div id="notification-dropdown" class="notification-dropdown" hidden></div>
+          <div class="status" id="status">connecting</div>
+        </div>
       </header>
 
       <section class="grid top-grid">
@@ -55,6 +65,8 @@
       <section class="card chat-section">
         <div class="card-header">
           <h2>Chat with DesktopAI</h2>
+          <span class="pill" id="chat-conversation-title">New Conversation</span>
+          <button class="btn secondary" id="chat-new-btn" style="margin-left:auto;padding:4px 12px;font-size:0.85rem;">New Chat</button>
           <span class="pill" id="chat-status">ready</span>
         </div>
         <div class="chat-container">
@@ -72,10 +84,12 @@
               </div>
             </div>
           </div>
+          <div id="recipe-suggestions" class="recipe-suggestions"></div>
           <div class="chat-input-bar">
             <input type="text" id="chat-input" placeholder="Ask something or give a command…" aria-label="Chat message" />
             <button class="btn" id="chat-send-btn">Send</button>
           </div>
+          <p class="kbd-hint">Press / to focus &middot; Ctrl+Enter to send &middot; Esc to clear</p>
         </div>
       </section>
 

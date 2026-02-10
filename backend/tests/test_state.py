@@ -1,8 +1,8 @@
 import asyncio
 from datetime import datetime, timezone
 
-from app.state import StateStore
 from app.schemas import WindowEvent
+from app.state import StateStore
 
 
 def test_state_store_record_and_read():

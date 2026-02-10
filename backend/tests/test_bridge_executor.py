@@ -3,7 +3,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from app.action_executor import BridgeActionExecutor
 from app.schemas import TaskAction
 

@@ -11,23 +11,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from .auth import TokenAuthMiddleware
-from .config import settings
-from .runtime_logs import RuntimeLogHandler
-
 # Import deps to initialize singletons (db, store, ollama, etc.)
 from . import deps as _deps
+from .auth import TokenAuthMiddleware
+from .config import settings
+from .routes.agent import router as agent_router
+from .routes.autonomy import router as autonomy_router
+from .routes.chat_history import router as chat_history_router
+from .routes.ingest import router as ingest_router
+from .routes.notifications import router as notifications_router
+from .routes.ollama_routes import router as ollama_router
+from .routes.readiness import router as readiness_router
+from .routes.recipes import router as recipes_router
 
 # Import route modules
 from .routes.state import router as state_router
 from .routes.tasks import router as tasks_router
-from .routes.autonomy import router as autonomy_router
-from .routes.ollama_routes import router as ollama_router
 from .routes.telemetry import router as telemetry_router
-from .routes.readiness import router as readiness_router
-from .routes.agent import router as agent_router
-from .routes.ingest import router as ingest_router
 from .routes.ws_route import router as ws_router
+from .runtime_logs import RuntimeLogHandler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("desktopai.backend")
@@ -126,6 +128,9 @@ app.include_router(readiness_router)
 app.include_router(agent_router)
 app.include_router(ingest_router)
 app.include_router(ws_router)
+app.include_router(chat_history_router)
+app.include_router(notifications_router)
+app.include_router(recipes_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -155,3 +160,6 @@ collector_status = _deps.collector_status
 trajectory_store = _deps.trajectory_store
 classifier = _deps.classifier
 action_executor = _deps.action_executor
+chat_memory = _deps.chat_memory
+notification_store = _deps.notification_store
+notification_engine = _deps.notification_engine

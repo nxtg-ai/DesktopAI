@@ -1,11 +1,10 @@
 import asyncio
 
 import pytest
-
 from app.autonomy import AutonomousRunner
 from app.orchestrator import TaskOrchestrator
-from app.schemas import AutonomyStartRequest, TaskAction, TaskStepPlan
 from app.planner import DeterministicAutonomyPlanner, OllamaAutonomyPlanner
+from app.schemas import AutonomyStartRequest, TaskAction, TaskStepPlan
 
 
 class _DummyOllama:
@@ -169,6 +168,7 @@ def test_ollama_planner_includes_desktop_context_in_prompt():
     async def scenario():
         from datetime import datetime, timezone
         from unittest.mock import AsyncMock
+
         from app.schemas import WindowEvent
 
         event = WindowEvent(
@@ -239,6 +239,7 @@ class _TrajectoryCapturingOllama:
 def test_ollama_planner_includes_trajectory_context_in_prompt():
     async def scenario():
         from unittest.mock import AsyncMock
+
         from app.memory import Trajectory
 
         traj = Trajectory(

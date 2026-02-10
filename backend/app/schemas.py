@@ -220,3 +220,4 @@ class AutonomyRunRecord(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     allow_actions: bool = True
+    conversation_id: Optional[str] = None

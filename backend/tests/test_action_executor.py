@@ -10,7 +10,6 @@ os.environ.setdefault("UI_TELEMETRY_ARTIFACT_DIR", "/tmp/desktopai-ui-telemetry-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.action_executor import (
     BridgeActionExecutor,
     SimulatedTaskActionExecutor,
@@ -18,7 +17,6 @@ from app.action_executor import (
     build_action_executor,
 )
 from app.schemas import TaskAction
-
 
 # ── _ps_quote tests ──────────────────────────────────────────────────────
 

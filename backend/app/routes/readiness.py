@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
+import app.deps as _deps
+
 from ..config import settings
 from ..deps import (
+    PLANNER_MODE_OLLAMA_REQUIRED,
     _ollama_unavailable_detail,
     autonomy,
     bridge,
@@ -15,10 +18,8 @@ from ..deps import (
     runtime_logs,
     tasks,
     ui_telemetry,
-    PLANNER_MODE_OLLAMA_REQUIRED,
 )
 from ..selftest import run_selftest
-import app.deps as _deps
 
 router = APIRouter()
 

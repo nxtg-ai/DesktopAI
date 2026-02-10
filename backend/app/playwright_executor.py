@@ -4,10 +4,9 @@ Requires Chrome/Edge launched with --remote-debugging-port=9222.
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Dict, Optional
 
-from .action_executor import TaskActionExecutor, ActionExecutionResult
+from .action_executor import ActionExecutionResult, TaskActionExecutor
 from .schemas import TaskAction
 
 
@@ -29,9 +28,9 @@ class PlaywrightExecutor(TaskActionExecutor):
 
         # Lazy import to handle cases where playwright isn't installed
         try:
-            import playwright
-            self._playwright_available = True
-        except ImportError:
+            import importlib.util
+            self._playwright_available = importlib.util.find_spec("playwright") is not None
+        except (ImportError, ValueError):
             self._playwright_available = False
 
     async def _ensure_connected(self) -> None:

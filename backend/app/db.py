@@ -177,7 +177,7 @@ class EventDatabase:
                     payload["uia_json"],
                 ),
             )
-            event_id = int(cur.lastrowid)
+            event_id = int(cur.lastrowid or 0)
             if event.type == "foreground":
                 self._set_state(cur, "current_event_id", str(event_id))
                 if event.category:

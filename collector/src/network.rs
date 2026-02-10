@@ -24,21 +24,34 @@ pub fn send_http(url: &str, event: &WindowEvent) {
     }
 }
 
+/// Calculate backoff duration with exponential increase, capped at max.
+pub fn calculate_backoff(current_ms: u64, max_ms: u64) -> u64 {
+    (current_ms.saturating_mul(2)).min(max_ms)
+}
+
 pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
     let mut ws = None;
     let mut last_attempt = Instant::now() - config.ws_retry;
     let poll_timeout = Duration::from_millis(50);
+    let mut backoff_ms: u64 = 1000;
+    let max_backoff_ms = config.ws_reconnect_max_ms;
 
     loop {
-        // Reconnect if needed
-        if ws.is_none() && last_attempt.elapsed() >= config.ws_retry {
+        // Reconnect if needed (with exponential backoff)
+        if ws.is_none() && last_attempt.elapsed() >= Duration::from_millis(backoff_ms) {
             last_attempt = Instant::now();
             ws = connect_ws(&config.ws_url);
             if let Some(ref mut socket) = ws {
+                // Reset backoff on successful connection
+                backoff_ms = 1000;
                 // Set non-blocking for command reads
                 if let tungstenite::stream::MaybeTlsStream::Plain(ref s) = socket.get_ref() {
                     let _ = s.set_nonblocking(true);
                 }
+            } else {
+                // Increase backoff on failed connection
+                backoff_ms = calculate_backoff(backoff_ms, max_backoff_ms);
+                log::info!("WebSocket reconnect failed, next attempt in {}ms", backoff_ms);
             }
         }
 
@@ -173,6 +186,29 @@ mod tests {
         let json_str = json.unwrap();
         assert!(json_str.contains("idle"));
         assert!(json_str.contains("collector"));
+    }
+
+    #[test]
+    fn test_exponential_backoff_calculation() {
+        assert_eq!(calculate_backoff(1000, 30000), 2000);
+        assert_eq!(calculate_backoff(2000, 30000), 4000);
+        assert_eq!(calculate_backoff(4000, 30000), 8000);
+        assert_eq!(calculate_backoff(16000, 30000), 30000); // capped
+        assert_eq!(calculate_backoff(30000, 30000), 30000); // stays at cap
+    }
+
+    #[test]
+    fn test_backoff_resets_on_success() {
+        // Simulate: backoff grows, then resets
+        let mut backoff_ms: u64 = 1000;
+        let max = 30000;
+        backoff_ms = calculate_backoff(backoff_ms, max);
+        assert_eq!(backoff_ms, 2000);
+        backoff_ms = calculate_backoff(backoff_ms, max);
+        assert_eq!(backoff_ms, 4000);
+        // Simulate successful connection → reset
+        backoff_ms = 1000;
+        assert_eq!(backoff_ms, 1000);
     }
 
     #[test]

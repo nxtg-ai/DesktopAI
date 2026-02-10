@@ -8,9 +8,8 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from app.main import app, chat_memory, ollama, store
 from httpx import ASGITransport, AsyncClient
-
-from app.main import app, store, ollama
 
 
 @pytest.fixture
@@ -175,3 +174,58 @@ async def test_chat_ollama_error_falls_back_gracefully(client):
     data = resp.json()
     assert data["source"] == "context"
     assert len(data["response"]) > 0
+
+
+@pytest.mark.anyio
+async def test_chat_returns_conversation_id(client):
+    """Chat response always includes a conversation_id."""
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post("/api/chat", json={"message": "hello"})
+    data = resp.json()
+    assert "conversation_id" in data
+    assert isinstance(data["conversation_id"], str)
+    assert len(data["conversation_id"]) == 36
+
+
+@pytest.mark.anyio
+async def test_chat_with_existing_conversation_id(client):
+    """Chat preserves conversation_id when provided."""
+    cid = await chat_memory.create_conversation("test")
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat", json={"message": "hello", "conversation_id": cid}
+        )
+    data = resp.json()
+    assert data["conversation_id"] == cid
+
+
+@pytest.mark.anyio
+async def test_chat_multi_turn_context(client):
+    """Multi-turn chat passes history to ollama."""
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", new_callable=AsyncMock, return_value="First response") as mock_chat:
+        resp1 = await client.post("/api/chat", json={"message": "first message"})
+    cid = resp1.json()["conversation_id"]
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", new_callable=AsyncMock, return_value="Second response") as mock_chat:
+        resp2 = await client.post(
+            "/api/chat", json={"message": "follow up", "conversation_id": cid}
+        )
+    # The second call should include history in messages
+    call_args = mock_chat.call_args[0][0]
+    # Should have system + history (user+assistant) + new user = at least 4 messages
+    assert len(call_args) >= 4
+    assert resp2.json()["conversation_id"] == cid
+
+
+@pytest.mark.anyio
+async def test_chat_new_conversation_created(client):
+    """Each chat without conversation_id creates a new conversation."""
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp1 = await client.post("/api/chat", json={"message": "hello"})
+        resp2 = await client.post("/api/chat", json={"message": "world"})
+
+    cid1 = resp1.json()["conversation_id"]
+    cid2 = resp2.json()["conversation_id"]
+    assert cid1 != cid2

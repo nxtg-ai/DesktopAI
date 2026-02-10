@@ -1,0 +1,15 @@
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportOptionalMemberAccess = "warning"
+reportOptionalCall = "warning"
+exclude = ["backend/app/playwright_executor.py"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501", "E402"]

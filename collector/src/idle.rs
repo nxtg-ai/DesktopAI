@@ -57,6 +57,9 @@ mod tests {
             screenshot_max_height: 1080,
             screenshot_quality: 85,
             command_enabled: true,
+            screenshot_format: "jpeg".into(),
+            uia_cache_ttl_ms: 2000,
+            ws_reconnect_max_ms: 30_000,
         };
 
         // Should return immediately when idle_enabled is false

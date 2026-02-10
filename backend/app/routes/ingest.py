@@ -13,9 +13,10 @@ from ..deps import (
     collector_status,
     db,
     hub,
+    notification_engine,
     store,
 )
-from ..config import settings
+from ..notification_engine import StateSnapshot
 from ..schemas import WindowEvent
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,16 @@ async def _handle_event(event: WindowEvent, *, transport: str) -> None:
             },
         }
     )
+
+    # Evaluate notification rules
+    snapshot = StateSnapshot(
+        idle=idle,
+        idle_since_ts=idle_since.timestamp() if idle_since else None,
+        process_exe=event.process_exe or "",
+        window_title=event.title or "",
+        event_count=count,
+    )
+    await notification_engine.evaluate(snapshot)
 
 
 @router.post("/api/events")

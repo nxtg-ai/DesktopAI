@@ -27,7 +27,9 @@ pub use windows::{window_title, process_path, build_event, win_event_hook, idle_
 #[cfg(windows)]
 pub use screenshot::{capture_screenshot, init_screenshot_buffer};
 
+#[cfg(windows)]
 use crossbeam_channel::unbounded;
+#[cfg(windows)]
 use std::thread;
 
 #[cfg(windows)]

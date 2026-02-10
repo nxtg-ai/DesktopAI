@@ -5,17 +5,19 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
+import app.deps as _deps
+
 from ..config import settings
 from ..deps import (
+    PLANNER_SOURCE_CONFIG_DEFAULT,
+    PLANNER_SOURCE_RUNTIME_OVERRIDE,
+    RUNTIME_SETTING_PLANNER_MODE,
     _dump,
     _planner_status_payload,
     autonomy,
     db,
     planner,
     tasks,
-    PLANNER_SOURCE_RUNTIME_OVERRIDE,
-    PLANNER_SOURCE_CONFIG_DEFAULT,
-    RUNTIME_SETTING_PLANNER_MODE,
 )
 from ..schemas import (
     AutonomyApproveRequest,
@@ -24,7 +26,6 @@ from ..schemas import (
     ReadinessGateRequest,
     ReadinessMatrixRequest,
 )
-import app.deps as _deps
 
 router = APIRouter()
 

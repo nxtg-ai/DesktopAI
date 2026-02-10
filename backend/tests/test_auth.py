@@ -7,10 +7,8 @@ os.environ.setdefault("UI_TELEMETRY_ARTIFACT_DIR", "/tmp/desktopai-ui-telemetry-
 
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-
 from app.main import app
-
+from fastapi.testclient import TestClient
 
 # -- Dev mode: no API_TOKEN configured --
 

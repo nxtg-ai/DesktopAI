@@ -37,5 +37,11 @@ jobs:
       - name: Audit dependencies
         run: pip-audit -r backend/requirements.txt
 
+      - name: Lint
+        run: ruff check backend/app/ backend/tests/
+
+      - name: Type check
+        run: pyright backend/app/
+
       - name: Run backend tests
         run: make backend-test
