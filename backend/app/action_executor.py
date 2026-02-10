@@ -1,3 +1,5 @@
+"""Action executors: simulated, Windows PowerShell, and command bridge backends."""
+
 from __future__ import annotations
 
 import asyncio
@@ -204,6 +206,7 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
     ) -> str:
         name = (action.action or "").strip()
         params = dict(action.parameters or {})
+        self._validate_command_input(name)
 
         if name == "observe_desktop":
             if desktop_context is not None:
@@ -268,7 +271,8 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
             script = "$ErrorActionPreference='Stop'; Start-Sleep -Milliseconds 200; Write-Output 'verified'"
             return await self._run_powershell(script)
 
-        raise RuntimeError(f"unsupported action for windows executor: {name}")
+        # _validate_command_input already rejects unknown actions above
+        raise RuntimeError(f"unhandled action: {name}")
 
     async def _generate_compose_text(self, objective: str, desktop_context) -> Optional[str]:
         try:
@@ -329,7 +333,23 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
     async def _run_powershell(self, script: str) -> str:
         return await asyncio.to_thread(self._run_powershell_blocking, script)
 
+    _VALID_ACTIONS = frozenset({
+        "observe_desktop", "open_application", "focus_search",
+        "compose_text", "send_or_submit", "verify_outcome",
+    })
+    _PS_MAX_VALUE_LEN = 8192
+
+    def _validate_command_input(self, action_name: str) -> None:
+        if action_name not in self._VALID_ACTIONS:
+            raise RuntimeError(f"unsupported action for windows executor: {action_name}")
+
     def _ps_quote(self, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("PowerShell input must not contain null bytes")
+        if len(value) > self._PS_MAX_VALUE_LEN:
+            raise ValueError(
+                f"PowerShell input too long ({len(value)} chars, max {self._PS_MAX_VALUE_LEN})"
+            )
         return "'" + value.replace("'", "''") + "'"
 
     def _map_application_alias(self, value: str) -> str:

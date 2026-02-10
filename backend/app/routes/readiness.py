@@ -1,0 +1,125 @@
+"""Readiness, executor, and selftest routes."""
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter
+
+from ..config import settings
+from ..deps import (
+    _ollama_unavailable_detail,
+    autonomy,
+    bridge,
+    collector_status,
+    ollama,
+    planner,
+    runtime_logs,
+    tasks,
+    ui_telemetry,
+    PLANNER_MODE_OLLAMA_REQUIRED,
+)
+from ..selftest import run_selftest
+import app.deps as _deps
+
+router = APIRouter()
+
+
+@router.get("/api/executor")
+async def get_executor_status() -> dict:
+    return tasks.executor_status()
+
+
+@router.get("/api/executor/preflight")
+async def get_executor_preflight() -> dict:
+    return await tasks.executor_preflight()
+
+
+@router.get("/api/readiness/status")
+async def get_readiness_status() -> dict:
+    preflight = await tasks.executor_preflight()
+    collector = await collector_status.snapshot()
+    ollama_available = await ollama.available()
+    ollama_diagnostics = ollama.diagnostics()
+    latest_runs = await autonomy.list_runs(limit=1)
+    latest_run = latest_runs[0] if latest_runs else None
+    latest_sessions = await ui_telemetry.list_sessions(limit=1)
+    latest_session = latest_sessions[0] if latest_sessions else None
+    runtime_log_entries = runtime_logs.count()
+
+    collector_connected = bool(collector.get("ws_connected", False))
+    planner_mode = planner.mode
+    ollama_required = planner_mode == PLANNER_MODE_OLLAMA_REQUIRED
+    checks = [
+        {
+            "name": "executor_preflight",
+            "ok": bool(preflight.get("ok", False)),
+            "required": True,
+            "detail": preflight.get("message", ""),
+        },
+        {
+            "name": "collector_connected",
+            "ok": collector_connected,
+            "required": False,
+            "detail": "Windows collector websocket connected."
+            if collector_connected
+            else "Windows collector websocket not connected.",
+        },
+        {
+            "name": "runtime_log_buffer",
+            "ok": True,
+            "required": True,
+            "detail": f"{runtime_log_entries} buffered runtime logs.",
+        },
+        {
+            "name": "ollama_available",
+            "ok": bool(ollama_available),
+            "required": ollama_required,
+            "detail": "Ollama available for local summaries and planner mode."
+            if ollama_available
+            else _ollama_unavailable_detail(
+                ollama_required=ollama_required,
+                diagnostics=ollama_diagnostics,
+            ),
+        },
+    ]
+
+    ok = all(item["ok"] for item in checks if item.get("required", True))
+    required_checks = [item for item in checks if item.get("required", True)]
+    required_total = len(required_checks)
+    required_failed = sum(1 for item in required_checks if not item.get("ok", False))
+    required_passed = required_total - required_failed
+    warning_count = sum(1 for item in checks if not item.get("ok", False) and not item.get("required", True))
+    return {
+        "ok": ok,
+        "checks": checks,
+        "summary": {
+            "executor_mode": preflight.get("mode"),
+            "autonomy_planner_mode": planner_mode,
+            "autonomy_planner_source": _deps.planner_mode_source,
+            "collector_connected": collector_connected,
+            "collector_total_events": int(collector.get("total_events", 0) or 0),
+            "latest_autonomy_run_id": latest_run.run_id if latest_run else None,
+            "latest_autonomy_status": latest_run.status if latest_run else None,
+            "latest_telemetry_session_id": latest_session.get("session_id") if latest_session else None,
+            "runtime_log_entries": runtime_log_entries,
+            "ollama_available": bool(ollama_available),
+            "ollama_model_source": _deps.ollama_model_source,
+            "ollama_configured_model": ollama_diagnostics.get("configured_model"),
+            "ollama_active_model": ollama_diagnostics.get("active_model"),
+            "ollama_last_check_at": ollama_diagnostics.get("last_check_at"),
+            "ollama_last_check_source": ollama_diagnostics.get("last_check_source"),
+            "ollama_last_http_status": ollama_diagnostics.get("last_http_status"),
+            "ollama_last_error": ollama_diagnostics.get("last_error"),
+            "bridge_connected": bridge.connected,
+            "vision_agent_enabled": settings.vision_agent_enabled,
+            "required_total": required_total,
+            "required_passed": required_passed,
+            "required_failed": required_failed,
+            "warning_count": warning_count,
+        },
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/api/selftest")
+async def selftest() -> dict:
+    return run_selftest()

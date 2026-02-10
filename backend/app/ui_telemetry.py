@@ -1,3 +1,5 @@
+"""UI telemetry ingestion, session tracking, and artifact storage."""
+
 from __future__ import annotations
 
 import asyncio

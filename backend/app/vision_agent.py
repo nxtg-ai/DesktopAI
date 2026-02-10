@@ -1,3 +1,5 @@
+"""Reactive vision agent using VLM-guided observe-reason-act loop."""
+
 from __future__ import annotations
 
 import json

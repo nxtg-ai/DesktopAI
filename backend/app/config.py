@@ -1,3 +1,5 @@
+"""Application settings loaded from environment variables and .env file."""
+
 import os
 from dataclasses import dataclass, field
 from typing import List
@@ -89,6 +91,7 @@ class Settings:
     ui_telemetry_max_events: int = _env_int("UI_TELEMETRY_MAX_EVENTS", 5000)
     runtime_log_max_entries: int = _env_int("RUNTIME_LOG_MAX_ENTRIES", 2000)
     api_token: str = _env("API_TOKEN", "")
+    rate_limit_per_minute: int = _env_int("RATE_LIMIT_PER_MINUTE", 60)
 
     allowed_origins: List[str] = field(
         default_factory=lambda: [

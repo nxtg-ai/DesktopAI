@@ -1,3 +1,5 @@
+"""SQLite-backed trajectory storage for agent memory and experience replay."""
+
 from __future__ import annotations
 
 import asyncio

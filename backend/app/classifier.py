@@ -1,3 +1,5 @@
+"""Activity classifier using rule-based heuristics with optional Ollama LLM fallback."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

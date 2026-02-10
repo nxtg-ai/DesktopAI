@@ -1,3 +1,5 @@
+"""Bidirectional command bridge between Python backend and Rust Windows collector."""
+
 from __future__ import annotations
 
 import asyncio

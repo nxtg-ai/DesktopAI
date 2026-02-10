@@ -1,3 +1,5 @@
+"""SQLite persistence for events, autonomy runs, task records, and runtime settings."""
+
 from __future__ import annotations
 
 import asyncio

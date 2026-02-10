@@ -1,9 +1,14 @@
+"""Autonomous run management with worker loops, approval gates, and vision agent wrapper."""
+
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Dict, List, Optional
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from .orchestrator import TaskOrchestrator
 from .planner import AutonomyPlanner, DeterministicAutonomyPlanner
@@ -216,8 +221,8 @@ class AutonomousRunner:
 
         try:
             await self._orchestrator.cancel_task(run.task_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Cancel task cleanup failed: %s", exc)
         if snapshot is None:
             raise RuntimeError("cancel update snapshot missing")
         await self._notify_update(snapshot)
@@ -354,9 +359,8 @@ class AutonomousRunner:
         snapshot = self._clone_run(run)
         try:
             await self._on_run_update(snapshot)
-        except Exception:
-            # Broadcast failures should not break run control flow.
-            return
+        except Exception as exc:
+            logger.debug("Broadcast callback failed: %s", exc)
 
     def _clone_run(self, run: AutonomyRunRecord) -> AutonomyRunRecord:
         if hasattr(run, "model_copy"):
@@ -445,8 +449,8 @@ class VisionAutonomousRunner:
                     await self._trajectory_store.save_trajectory(
                         current_run_id, objective, steps, outcome,
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Trajectory save failed: %s", exc)
 
             await self._notify_update(run)
 
@@ -473,8 +477,8 @@ class VisionAutonomousRunner:
                         await self._trajectory_store.save_trajectory(
                             run_id, objective, [], "failed",
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Trajectory save failed: %s", exc)
                 await self._notify_update(run)
 
     def _make_step_callback(self, run_id: str):
@@ -537,8 +541,8 @@ class VisionAutonomousRunner:
         snapshot = self._clone_run(run) if hasattr(run, "model_copy") or hasattr(run, "copy") else run
         try:
             await self._on_run_update(snapshot)
-        except Exception:
-            return
+        except Exception as exc:
+            logger.debug("Broadcast callback failed: %s", exc)
 
     def _clone_run(self, run: AutonomyRunRecord) -> AutonomyRunRecord:
         if hasattr(run, "model_copy"):

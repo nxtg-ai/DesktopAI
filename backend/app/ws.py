@@ -1,3 +1,5 @@
+"""WebSocket hub for broadcasting real-time events to connected UI clients."""
+
 from __future__ import annotations
 
 import asyncio

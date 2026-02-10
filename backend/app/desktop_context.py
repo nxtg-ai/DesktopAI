@@ -1,3 +1,5 @@
+"""Frozen dataclass wrapping desktop state for LLM prompts and agent context."""
+
 from __future__ import annotations
 
 import base64

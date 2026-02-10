@@ -1,3 +1,5 @@
+"""In-memory event store with current window state, idle tracking, and snapshots."""
+
 from __future__ import annotations
 
 import asyncio

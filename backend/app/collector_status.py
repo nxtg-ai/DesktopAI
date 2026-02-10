@@ -1,3 +1,5 @@
+"""Tracks Windows collector WebSocket connection state and event statistics."""
+
 from __future__ import annotations
 
 import asyncio

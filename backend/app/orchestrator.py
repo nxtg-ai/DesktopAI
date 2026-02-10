@@ -1,10 +1,15 @@
+"""Task orchestrator with step-by-step execution, approval gates, and retry logic."""
+
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Dict, List, Optional, Set
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from .action_executor import (
     ActionExecutionResult,
@@ -333,8 +338,8 @@ class TaskOrchestrator:
                 if event:
                     from .desktop_context import DesktopContext
                     desktop_context = DesktopContext.from_event(event)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Desktop context fetch failed: %s", exc)
 
         last: Optional[ActionExecutionResult] = None
         for attempt in range(1, self._executor_retry_count + 1):
@@ -406,8 +411,8 @@ class TaskOrchestrator:
         async def _run_update() -> None:
             try:
                 await self._on_task_update(snapshot)
-            except Exception:
-                return
+            except Exception as exc:
+                logger.debug("Task update callback failed: %s", exc)
 
         job = asyncio.create_task(_run_update())
         self._update_jobs.add(job)

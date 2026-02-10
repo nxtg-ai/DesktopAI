@@ -1,3 +1,5 @@
+"""In-memory ring buffer for runtime log capture with filtering and correlation."""
+
 from __future__ import annotations
 
 import logging

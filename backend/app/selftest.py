@@ -1,3 +1,5 @@
+"""Built-in self-test that validates backend module imports and configuration."""
+
 from __future__ import annotations
 
 import os

@@ -1,7 +1,12 @@
+"""Autonomy planners: deterministic rule-based and Ollama-powered with trajectory context."""
+
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, List, Optional, Protocol
+
+logger = logging.getLogger(__name__)
 
 from .schemas import TaskAction, TaskStepPlan
 
@@ -182,8 +187,8 @@ class OllamaAutonomyPlanner:
                     ctx = DesktopContext.from_event(event)
                     if ctx:
                         desktop_context_text = f"\n\nCurrent Desktop State:\n{ctx.to_llm_prompt()}"
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Desktop context fetch failed: %s", exc)
 
         trajectory_text = ""
         if self._trajectory_store:
@@ -195,8 +200,8 @@ class OllamaAutonomyPlanner:
                 raw = format_trajectory_context(similar, max_chars=self._trajectory_max_chars)
                 if raw:
                     trajectory_text = f"\n\nPast Experience (similar tasks attempted before):\n{raw}\n"
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Trajectory lookup failed: %s", exc)
 
         prompt = _build_plan_prompt(objective, desktop_context=desktop_context_text, trajectory_context=trajectory_text)
         response = None

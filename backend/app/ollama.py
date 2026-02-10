@@ -1,3 +1,5 @@
+"""Async Ollama HTTP client with model fallback, health tracking, and vision support."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,7 +8,11 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
+import logging
+
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaClient:
@@ -77,7 +83,8 @@ class OllamaClient:
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 resp = await client.get(f"{self.base_url}/api/tags")
-        except Exception:
+        except Exception as exc:
+            logger.debug("Failed to list models: %s", exc)
             return []
 
         if resp.status_code != 200:
@@ -85,7 +92,8 @@ class OllamaClient:
 
         try:
             payload = resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.debug("Failed to parse model list: %s", exc)
             return []
         models = payload.get("models") if isinstance(payload, dict) else None
         if not isinstance(models, list):
