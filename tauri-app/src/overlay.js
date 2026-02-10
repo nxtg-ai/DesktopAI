@@ -266,10 +266,24 @@ function connectWS() {
 function handleWSMessage(data) {
   avatar.bump(0.15);
 
-  // Snapshot or event — update context
-  if (data.type === "snapshot" || data.type === "event") {
-    const payload = data.data || data;
-    updateContext(payload);
+  if (data.type === "snapshot") {
+    const current = data.state?.current;
+    if (current) updateContext(current);
+  }
+
+  if (data.type === "state") {
+    const current = data.state?.current;
+    if (current) updateContext(current);
+  }
+
+  if (data.type === "event") {
+    const event = data.event;
+    if (event) updateContext(event);
+  }
+
+  if (data.type === "autonomy_run") {
+    const run = data.run;
+    if (run) handleAutonomyUpdate(run);
   }
 }
 
@@ -283,14 +297,14 @@ function setStatus(state, text) {
 
 // ── Context ─────────────────────────────────────────────────────────
 function updateContext(data) {
-  if (data.window_title || data.title) {
-    const title = data.window_title || data.title || "";
-    const process = data.process_exe || data.process || "";
-    const display = process ? `${process} — ${title}` : title;
-    contextText.textContent = display;
-    contextBar.classList.add("has-context");
-    desktopContext = data;
-  }
+  const title = data.window_title || data.title || "";
+  const process = data.process_exe || "";
+  if (!title && !process) return;
+
+  const display = process ? `${process} — ${title}` : title;
+  contextText.textContent = display;
+  contextBar.classList.add("has-context");
+  desktopContext = data;
 }
 
 async function fetchContext() {
@@ -298,9 +312,45 @@ async function fetchContext() {
     const r = await fetch(`${API_BASE}/api/state/snapshot`);
     if (r.ok) {
       const data = await r.json();
-      updateContext(data);
+      if (data.context) updateContext(data.context);
     }
   } catch {}
+}
+
+// ── Markdown ─────────────────────────────────────────────────────────
+function renderMarkdown(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`(.+?)`/g, "<code>$1</code>")
+    .replace(/\n/g, "<br>");
+}
+
+// ── Autonomy Run Status ──────────────────────────────────────────────
+function handleAutonomyUpdate(run) {
+  let runEl = document.getElementById("run-status");
+  if (!runEl) {
+    runEl = document.createElement("div");
+    runEl.id = "run-status";
+    runEl.className = "run-status";
+    contextBar.parentElement.insertBefore(runEl, contextBar.nextSibling);
+  }
+
+  if (run.status === "running") {
+    runEl.textContent = `\u27F3 ${run.objective}`;
+    runEl.className = "run-status running";
+  } else if (run.status === "completed") {
+    runEl.textContent = `\u2713 ${run.objective}`;
+    runEl.className = "run-status completed";
+    setTimeout(() => runEl.remove(), 5000);
+  } else if (run.status === "failed") {
+    runEl.textContent = `\u2717 ${run.last_error || run.objective}`;
+    runEl.className = "run-status failed";
+    setTimeout(() => runEl.remove(), 8000);
+  }
 }
 
 // ── Chat ────────────────────────────────────────────────────────────
@@ -312,7 +362,11 @@ function appendMessage(role, text, meta = {}) {
 
   const bubble = document.createElement("div");
   bubble.className = "msg-bubble";
-  bubble.textContent = text;
+  if (role === "agent") {
+    bubble.innerHTML = renderMarkdown(text);
+  } else {
+    bubble.textContent = text;
+  }
   msg.appendChild(bubble);
 
   // Meta row
@@ -385,6 +439,9 @@ async function sendMessage(text) {
         source: data.source,
         action_triggered: data.action_triggered,
       });
+      if (data.desktop_context) {
+        updateContext(data.desktop_context);
+      }
     } else {
       appendMessage("agent", "Something went wrong. Backend may be offline.", {
         source: "error",
