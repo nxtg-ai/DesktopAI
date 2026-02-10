@@ -21,7 +21,8 @@ from .config import settings
 from .db import EventDatabase
 from .action_executor import build_action_executor
 from .ollama import OllamaClient
-from .autonomy import AutonomousRunner
+from .autonomy import AutonomousRunner, VisionAutonomousRunner
+from .bridge import CommandBridge
 from .orchestrator import TaskOrchestrator
 from .planner import (
     DeterministicAutonomyPlanner,
@@ -131,6 +132,7 @@ db = EventDatabase(
     settings.db_task_retention_days,
 )
 collector_status = CollectorStatusStore()
+bridge = CommandBridge(default_timeout_s=settings.action_executor_bridge_timeout_s)
 classifier = ActivityClassifier(
     ollama,
     default_category=settings.classifier_default,
@@ -415,6 +417,8 @@ async def get_readiness_status() -> dict:
             "ollama_last_check_source": ollama_diagnostics.get("last_check_source"),
             "ollama_last_http_status": ollama_diagnostics.get("last_http_status"),
             "ollama_last_error": ollama_diagnostics.get("last_error"),
+            "bridge_connected": bridge.connected,
+            "vision_agent_enabled": settings.vision_agent_enabled,
             "required_total": required_total,
             "required_passed": required_passed,
             "required_failed": required_failed,
@@ -943,16 +947,24 @@ async def post_event(event: WindowEvent) -> dict:
 async def ingest_ws(ws: WebSocket) -> None:
     await ws.accept()
     await collector_status.note_ws_connected(datetime.now(timezone.utc))
+    bridge.attach(ws)
     try:
         while True:
             data = await ws.receive_json()
+            # Route command results to bridge instead of parsing as events
+            msg_type = data.get("type", "")
+            if msg_type == "command_result":
+                bridge.handle_result(data)
+                continue
             event = _parse_event(data)
             await _handle_event(event, transport="ws")
             await ws.send_json({"status": "ok"})
     except WebSocketDisconnect:
+        bridge.detach()
         await collector_status.note_ws_disconnected(datetime.now(timezone.utc))
         logger.info("Collector WS disconnected")
     except Exception as exc:
+        bridge.detach()
         await collector_status.note_ws_disconnected(datetime.now(timezone.utc))
         logger.exception("Collector WS error: %s", exc)
 
@@ -1093,6 +1105,35 @@ async def classify(request: ClassifyRequest) -> dict:
     return {"category": result.category, "source": result.source}
 
 
+@app.get("/api/agent/bridge")
+async def get_bridge_status() -> dict:
+    return bridge.status()
+
+
+@app.post("/api/agent/run")
+async def run_vision_agent(request: AutonomyStartRequest) -> dict:
+    from .vision_agent import VisionAgent
+
+    if not bridge.connected:
+        raise HTTPException(status_code=503, detail="collector bridge not connected")
+
+    if not settings.vision_agent_enabled:
+        raise HTTPException(status_code=503, detail="vision agent disabled")
+
+    agent = VisionAgent(
+        bridge=bridge,
+        ollama=ollama,
+        max_iterations=request.max_iterations or settings.vision_agent_max_iterations,
+        vision_model=settings.ollama_vision_model or None,
+    )
+    runner = VisionAutonomousRunner(
+        vision_agent=agent,
+        on_run_update=_publish_autonomy_update,
+    )
+    run = await runner.start(request)
+    return {"run": _dump(run)}
+
+
 _ACTION_KEYWORDS = {"draft", "reply", "send", "open", "type", "search", "click", "launch", "compose", "write", "submit", "delete", "forward", "close", "switch"}
 
 
@@ -1145,7 +1186,22 @@ async def chat_endpoint(request: ChatRequest) -> dict:
                 parallel_agents=3,
                 auto_approve_irreversible=False,
             )
-            run = await autonomy.start(start_req)
+            # Prefer vision agent when bridge is connected
+            if bridge.connected and settings.vision_agent_enabled:
+                from .vision_agent import VisionAgent
+                agent = VisionAgent(
+                    bridge=bridge,
+                    ollama=ollama,
+                    max_iterations=start_req.max_iterations,
+                    vision_model=settings.ollama_vision_model or None,
+                )
+                runner = VisionAutonomousRunner(
+                    vision_agent=agent,
+                    on_run_update=_publish_autonomy_update,
+                )
+                run = await runner.start(start_req)
+            else:
+                run = await autonomy.start(start_req)
             action_triggered = True
             run_id = run.run_id
         except Exception as exc:

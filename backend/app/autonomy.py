@@ -362,3 +362,165 @@ class AutonomousRunner:
         if hasattr(run, "model_copy"):
             return run.model_copy(deep=True)
         return run.copy(deep=True)
+
+
+class VisionAutonomousRunner:
+    """Wraps VisionAgent as an autonomy run with status tracking and agent_log."""
+
+    def __init__(
+        self,
+        vision_agent,
+        on_run_update: Optional[Callable[[AutonomyRunRecord], Awaitable[None]]] = None,
+    ) -> None:
+        self._agent = vision_agent
+        self._on_run_update = on_run_update
+        self._runs: Dict[str, AutonomyRunRecord] = {}
+        self._order: List[str] = []
+        self._workers: Dict[str, asyncio.Task] = {}
+        self._lock = asyncio.Lock()
+
+    async def start(self, request: AutonomyStartRequest) -> AutonomyRunRecord:
+        now = _utcnow()
+        run = AutonomyRunRecord(
+            run_id=str(uuid4()),
+            task_id="",
+            objective=request.objective,
+            planner_mode="vision",
+            status="running",
+            iteration=0,
+            max_iterations=request.max_iterations,
+            parallel_agents=1,
+            auto_approve_irreversible=request.auto_approve_irreversible,
+            started_at=now,
+            updated_at=now,
+            agent_log=[],
+        )
+        self._append_log(run, "vision-agent", "Vision agent started.")
+
+        async with self._lock:
+            self._runs[run.run_id] = run
+            self._order.append(run.run_id)
+            worker = asyncio.create_task(self._run_agent(run.run_id, request.objective))
+            self._workers[run.run_id] = worker
+
+        await self._notify_update(run)
+        return self._clone_run(run)
+
+    async def _run_agent(self, run_id: str, objective: str) -> None:
+        try:
+            def on_step(step):
+                asyncio.get_event_loop().call_soon_threadsafe(
+                    lambda: None  # We update synchronously below
+                )
+
+            run = self._runs.get(run_id)
+            if run is None:
+                return
+
+            steps = await self._agent.run(objective, on_step=self._make_step_callback(run_id))
+
+            async with self._lock:
+                run = self._runs.get(run_id)
+                if run is None:
+                    return
+                run.iteration = len(steps)
+                if steps and steps[-1].action.action == "done":
+                    run.status = "completed"
+                    run.finished_at = _utcnow()
+                    self._append_log(run, "vision-agent", f"Completed: {steps[-1].action.reasoning}")
+                else:
+                    run.status = "failed"
+                    run.last_error = "max iterations reached without completing"
+                    run.finished_at = _utcnow()
+                    self._append_log(run, "vision-agent", "Max iterations reached.")
+                run.updated_at = _utcnow()
+
+            await self._notify_update(run)
+
+        except asyncio.CancelledError:
+            async with self._lock:
+                run = self._runs.get(run_id)
+                if run:
+                    run.status = "cancelled"
+                    run.finished_at = _utcnow()
+                    run.updated_at = run.finished_at
+            return
+        except Exception as exc:
+            async with self._lock:
+                run = self._runs.get(run_id)
+                if run:
+                    run.status = "failed"
+                    run.last_error = str(exc)
+                    run.finished_at = _utcnow()
+                    run.updated_at = run.finished_at
+                    self._append_log(run, "vision-agent", f"Error: {exc}")
+            if run:
+                await self._notify_update(run)
+
+    def _make_step_callback(self, run_id: str):
+        def on_step(step):
+            run = self._runs.get(run_id)
+            if run is None:
+                return
+            run.iteration += 1
+            run.updated_at = _utcnow()
+            msg = f"Step {run.iteration}: {step.action.action}"
+            if step.action.reasoning:
+                msg += f" — {step.action.reasoning}"
+            if step.error:
+                msg += f" [error: {step.error}]"
+            self._append_log(run, "vision-agent", msg)
+        return on_step
+
+    async def get_run(self, run_id: str) -> Optional[AutonomyRunRecord]:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                return None
+            return self._clone_run(run)
+
+    async def cancel(self, run_id: str) -> AutonomyRunRecord:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                raise KeyError(f"run not found: {run_id}")
+            if run.status in {"completed", "failed", "cancelled"}:
+                raise ValueError(f"cannot cancel run with status {run.status}")
+            run.status = "cancelled"
+            run.finished_at = _utcnow()
+            run.updated_at = run.finished_at
+            self._append_log(run, "vision-agent", "Cancelled by operator.")
+            worker = self._workers.get(run_id)
+            if worker and not worker.done():
+                worker.cancel()
+            snapshot = self._clone_run(run)
+        await self._notify_update(snapshot)
+        return snapshot
+
+    async def list_runs(self, limit: int = 50) -> List[AutonomyRunRecord]:
+        async with self._lock:
+            if limit <= 0:
+                return []
+            ids = self._order[-limit:]
+            return [self._clone_run(self._runs[rid]) for rid in reversed(ids)]
+
+    def _append_log(self, run: AutonomyRunRecord, agent: str, message: str) -> None:
+        run.agent_log.append(
+            AgentLogEntry(timestamp=_utcnow(), agent=agent, message=message)
+        )
+        if len(run.agent_log) > 200:
+            run.agent_log = run.agent_log[-200:]
+
+    async def _notify_update(self, run) -> None:
+        if self._on_run_update is None:
+            return
+        snapshot = self._clone_run(run) if hasattr(run, "model_copy") or hasattr(run, "copy") else run
+        try:
+            await self._on_run_update(snapshot)
+        except Exception:
+            return
+
+    def _clone_run(self, run: AutonomyRunRecord) -> AutonomyRunRecord:
+        if hasattr(run, "model_copy"):
+            return run.model_copy(deep=True)
+        return run.copy(deep=True)

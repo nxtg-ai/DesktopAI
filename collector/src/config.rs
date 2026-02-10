@@ -17,6 +17,7 @@ pub struct Config {
     pub screenshot_max_width: u32,
     pub screenshot_max_height: u32,
     pub screenshot_quality: u8,
+    pub command_enabled: bool,
 }
 
 impl Config {
@@ -40,6 +41,7 @@ impl Config {
         let screenshot_max_width = env_u32("SCREENSHOT_MAX_WIDTH", 1024);
         let screenshot_max_height = env_u32("SCREENSHOT_MAX_HEIGHT", 768);
         let screenshot_quality = env_u8("SCREENSHOT_QUALITY", 85);
+        let command_enabled = env_bool("COMMAND_BRIDGE_ENABLED", true);
         Self {
             ws_url,
             http_url,
@@ -55,6 +57,7 @@ impl Config {
             screenshot_max_width,
             screenshot_max_height,
             screenshot_quality,
+            command_enabled,
         }
     }
 }
@@ -375,6 +378,7 @@ mod tests {
         env::remove_var("SCREENSHOT_MAX_WIDTH");
         env::remove_var("SCREENSHOT_MAX_HEIGHT");
         env::remove_var("SCREENSHOT_QUALITY");
+        env::remove_var("COMMAND_BRIDGE_ENABLED");
 
         let config = Config::from_env();
 
@@ -392,6 +396,7 @@ mod tests {
         assert_eq!(config.screenshot_max_width, 1024);
         assert_eq!(config.screenshot_max_height, 768);
         assert_eq!(config.screenshot_quality, 85);
+        assert!(config.command_enabled);
     }
 
     #[test]
@@ -411,6 +416,7 @@ mod tests {
         env::set_var("SCREENSHOT_MAX_WIDTH", "1920");
         env::set_var("SCREENSHOT_MAX_HEIGHT", "1080");
         env::set_var("SCREENSHOT_QUALITY", "90");
+        env::set_var("COMMAND_BRIDGE_ENABLED", "false");
 
         let config = Config::from_env();
 
@@ -428,6 +434,7 @@ mod tests {
         assert_eq!(config.screenshot_max_width, 1920);
         assert_eq!(config.screenshot_max_height, 1080);
         assert_eq!(config.screenshot_quality, 90);
+        assert!(!config.command_enabled);
 
         // Cleanup
         env::remove_var("BACKEND_WS_URL");
@@ -444,6 +451,7 @@ mod tests {
         env::remove_var("SCREENSHOT_MAX_WIDTH");
         env::remove_var("SCREENSHOT_MAX_HEIGHT");
         env::remove_var("SCREENSHOT_QUALITY");
+        env::remove_var("COMMAND_BRIDGE_ENABLED");
     }
 
     #[test]

@@ -10,6 +10,8 @@ pub mod windows;
 #[cfg(windows)]
 pub mod screenshot;
 
+pub mod command;
+
 // Re-export public types for testability and external use
 pub use config::{Config, env_bool, env_u64, env_usize, env_u32, env_u8};
 pub use event::{WindowEvent, UiaSnapshot, UiaElement, build_activity_event};

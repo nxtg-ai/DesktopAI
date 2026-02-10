@@ -56,6 +56,7 @@ mod tests {
             screenshot_max_width: 1920,
             screenshot_max_height: 1080,
             screenshot_quality: 85,
+            command_enabled: true,
         };
 
         // Should return immediately when idle_enabled is false
