@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DesktopAI</title>
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Drag handle -->
+      <div class="drag-handle" data-tauri-drag-region></div>
+
+      <!-- Window controls -->
+      <div class="window-controls">
+        <button class="win-btn compact-btn" id="compact-toggle" title="Toggle compact">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+        </button>
+        <button class="win-btn close-btn" id="close-btn" title="Hide to tray">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Avatar Section -->
+      <div class="avatar-container">
+        <canvas id="avatar-canvas" aria-label="DesktopAI avatar"></canvas>
+        <div class="avatar-status">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">connecting</span>
+        </div>
+      </div>
+
+      <!-- Context Bar -->
+      <div class="context-bar" id="context-bar">
+        <span class="context-icon">&#9673;</span>
+        <span class="context-text" id="context-text">No desktop context</span>
+      </div>
+
+      <!-- Chat Section -->
+      <div class="chat-section" id="chat-section">
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-welcome" id="chat-welcome">
+            <p>What can I help you with?</p>
+            <div class="suggestions">
+              <button class="chip" data-msg="What am I working on?">What am I doing?</button>
+              <button class="chip" data-msg="Draft a reply to this email">Draft reply</button>
+              <button class="chip" data-msg="Summarize my current activity">Summarize</button>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Ask or command..." />
+          <button class="send-btn" id="send-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="overlay.js"></script>
+  </body>
+</html>

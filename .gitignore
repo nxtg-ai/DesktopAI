@@ -9,6 +9,7 @@ backend/.ruff_cache/
 backend/.coverage
 backend/htmlcov/
 collector/target/
+tauri-app/src-tauri/target/
 backend/data/
 artifacts/
 ui-tests/node_modules/
