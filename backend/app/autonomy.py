@@ -371,9 +371,11 @@ class VisionAutonomousRunner:
         self,
         vision_agent,
         on_run_update: Optional[Callable[[AutonomyRunRecord], Awaitable[None]]] = None,
+        trajectory_store=None,
     ) -> None:
         self._agent = vision_agent
         self._on_run_update = on_run_update
+        self._trajectory_store = trajectory_store
         self._runs: Dict[str, AutonomyRunRecord] = {}
         self._order: List[str] = []
         self._workers: Dict[str, asyncio.Task] = {}
@@ -428,12 +430,23 @@ class VisionAutonomousRunner:
                     run.status = "completed"
                     run.finished_at = _utcnow()
                     self._append_log(run, "vision-agent", f"Completed: {steps[-1].action.reasoning}")
+                    outcome = "completed"
                 else:
                     run.status = "failed"
                     run.last_error = "max iterations reached without completing"
                     run.finished_at = _utcnow()
                     self._append_log(run, "vision-agent", "Max iterations reached.")
+                    outcome = "max_iterations"
                 run.updated_at = _utcnow()
+                current_run_id = run.run_id
+
+            if self._trajectory_store:
+                try:
+                    await self._trajectory_store.save_trajectory(
+                        current_run_id, objective, steps, outcome,
+                    )
+                except Exception:
+                    pass
 
             await self._notify_update(run)
 
@@ -455,6 +468,13 @@ class VisionAutonomousRunner:
                     run.updated_at = run.finished_at
                     self._append_log(run, "vision-agent", f"Error: {exc}")
             if run:
+                if self._trajectory_store:
+                    try:
+                        await self._trajectory_store.save_trajectory(
+                            run_id, objective, [], "failed",
+                        )
+                    except Exception:
+                        pass
                 await self._notify_update(run)
 
     def _make_step_callback(self, run_id: str):

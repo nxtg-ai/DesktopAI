@@ -133,6 +133,11 @@ db = EventDatabase(
 )
 collector_status = CollectorStatusStore()
 bridge = CommandBridge(default_timeout_s=settings.action_executor_bridge_timeout_s)
+
+from .memory import TrajectoryStore
+trajectory_store = TrajectoryStore(
+    path=settings.db_path.replace(".db", "-trajectories.db"),
+)
 classifier = ActivityClassifier(
     ollama,
     default_category=settings.classifier_default,
@@ -1125,10 +1130,14 @@ async def run_vision_agent(request: AutonomyStartRequest) -> dict:
         ollama=ollama,
         max_iterations=request.max_iterations or settings.vision_agent_max_iterations,
         vision_model=settings.ollama_vision_model or None,
+        min_confidence=settings.vision_agent_min_confidence,
+        max_consecutive_errors=settings.vision_agent_max_consecutive_errors,
+        error_backoff_ms=settings.vision_agent_error_backoff_ms,
     )
     runner = VisionAutonomousRunner(
         vision_agent=agent,
         on_run_update=_publish_autonomy_update,
+        trajectory_store=trajectory_store,
     )
     run = await runner.start(request)
     return {"run": _dump(run)}
@@ -1194,10 +1203,14 @@ async def chat_endpoint(request: ChatRequest) -> dict:
                     ollama=ollama,
                     max_iterations=start_req.max_iterations,
                     vision_model=settings.ollama_vision_model or None,
+                    min_confidence=settings.vision_agent_min_confidence,
+                    max_consecutive_errors=settings.vision_agent_max_consecutive_errors,
+                    error_backoff_ms=settings.vision_agent_error_backoff_ms,
                 )
                 runner = VisionAutonomousRunner(
                     vision_agent=agent,
                     on_run_update=_publish_autonomy_update,
+                    trajectory_store=trajectory_store,
                 )
                 run = await runner.start(start_req)
             else:
