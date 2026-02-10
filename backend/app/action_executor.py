@@ -645,8 +645,8 @@ def build_action_executor(
             ) from exc
 
     if normalized in {"auto", ""}:
-        # 1. Prefer bridge (works cross-platform over WebSocket to collector)
-        if bridge is not None:
+        # 1. Prefer bridge when collector is connected (works cross-platform)
+        if bridge is not None and getattr(bridge, "connected", False):
             return BridgeActionExecutor(
                 bridge=bridge, timeout_s=timeout_s, ollama=ollama,
             )

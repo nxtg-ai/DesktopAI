@@ -88,11 +88,15 @@ class RuntimeLogStore:
 
 
 class RuntimeLogHandler(logging.Handler):
+    _NOISY_LOGGERS = {"httpx", "httpcore"}
+
     def __init__(self, store: RuntimeLogStore):
         super().__init__()
         self._store = store
 
     def emit(self, record: logging.LogRecord) -> None:
+        if record.name in self._NOISY_LOGGERS:
+            return
         try:
             self._store.append(
                 level=record.levelname,
