@@ -21,8 +21,8 @@
         </button>
       </div>
 
-      <!-- Avatar Section -->
-      <div class="avatar-container">
+      <!-- Avatar Section (drag region) -->
+      <div class="avatar-container" data-tauri-drag-region>
         <canvas id="avatar-canvas" aria-label="DesktopAI avatar"></canvas>
         <div class="avatar-status">
           <span class="status-dot" id="status-dot"></span>
@@ -32,7 +32,7 @@
       </div>
 
       <!-- Context Bar -->
-      <div class="context-bar" id="context-bar">
+      <div class="context-bar" id="context-bar" data-tauri-drag-region>
         <span class="context-icon">&#9673;</span>
         <span class="context-text" id="context-text">No desktop context</span>
       </div>
