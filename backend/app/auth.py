@@ -1,4 +1,4 @@
-"""Authentication and rate-limiting middleware."""
+"""Authentication, rate-limiting, and security headers middleware."""
 
 from __future__ import annotations
 
@@ -15,6 +15,15 @@ from .config import settings
 
 _PUBLIC_PATHS = frozenset({"/api/health"})
 _RATE_LIMIT_EXEMPT = frozenset({"/api/health"})
+
+# Security headers applied to every HTTP response
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "0",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
 
 
 def _is_protected(path: str) -> bool:
@@ -48,6 +57,13 @@ class _RateLimiter:
 _rate_limiter = _RateLimiter(max_requests=settings.rate_limit_per_minute)
 
 
+def _add_security_headers(response):
+    """Attach security headers to an HTTP response."""
+    for header, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
+
+
 class TokenAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Rate limiting (skip for exempt paths and WebSocket upgrades)
@@ -57,19 +73,19 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             client_ip = request.client.host if request.client else "unknown"
             allowed, retry_after = _rate_limiter.is_allowed(client_ip)
             if not allowed:
-                return JSONResponse(
+                return _add_security_headers(JSONResponse(
                     {"error": "rate limit exceeded"},
                     status_code=429,
                     headers={"Retry-After": str(retry_after)},
-                )
+                ))
 
         # Token auth
         token = settings.api_token
         if not token:
-            return await call_next(request)
+            return _add_security_headers(await call_next(request))
 
         if not _is_protected(path):
-            return await call_next(request)
+            return _add_security_headers(await call_next(request))
 
         # WebSocket upgrades: token in query param
         if is_ws:
@@ -80,6 +96,8 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             provided = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else None
 
         if provided is None or not hmac.compare_digest(provided, token):
-            return JSONResponse({"error": "invalid or missing API token"}, status_code=401)
+            return _add_security_headers(
+                JSONResponse({"error": "invalid or missing API token"}, status_code=401)
+            )
 
-        return await call_next(request)
+        return _add_security_headers(await call_next(request))

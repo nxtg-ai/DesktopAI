@@ -57,7 +57,7 @@ ui_telemetry = UiTelemetryStore(
     artifact_dir=settings.ui_telemetry_artifact_dir,
     max_events=settings.ui_telemetry_max_events,
 )
-hub = WebSocketHub()
+hub = WebSocketHub(max_connections=settings.ws_max_connections)
 ollama = OllamaClient(settings.ollama_url, settings.ollama_model)
 db = EventDatabase(
     settings.db_path,

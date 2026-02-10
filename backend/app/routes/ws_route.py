@@ -10,7 +10,9 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def ui_ws(ws: WebSocket) -> None:
-    await hub.add(ws)
+    accepted = await hub.add(ws)
+    if not accepted:
+        return
     current, events = await store.snapshot()
     idle, idle_since = await store.idle_state()
     runs = await autonomy.list_runs(limit=1)
