@@ -26,6 +26,8 @@ on:
 jobs:
   ui-gate:
     runs-on: ubuntu-latest
+    env:
+      RATE_LIMIT_PER_MINUTE: "120"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

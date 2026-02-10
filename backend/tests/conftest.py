@@ -14,6 +14,7 @@ os.environ.setdefault("BACKEND_DB_PATH", ":memory:")
 os.environ.setdefault("CLASSIFIER_USE_OLLAMA", "0")
 os.environ.setdefault("CLASSIFIER_DEFAULT", "docs")
 os.environ.setdefault("UI_TELEMETRY_ARTIFACT_DIR", "/tmp/desktopai-ui-telemetry-test")
+os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "120")
 
 from app.auth import _rate_limiter
 from app.main import autonomy, db, ollama, planner, runtime_logs, settings, store, tasks
