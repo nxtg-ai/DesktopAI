@@ -24,3 +24,6 @@ DesktopAI.v2.R2/
 
 # External tool configs
 .codex/
+
+# Private vision docs
+myVISION.md
