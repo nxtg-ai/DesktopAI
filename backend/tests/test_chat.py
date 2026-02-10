@@ -1,5 +1,9 @@
 """Tests for the /api/chat conversational agent endpoint."""
 
+import os
+
+os.environ.setdefault("BACKEND_DB_PATH", ":memory:")
+
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
@@ -12,6 +16,14 @@ from app.main import app, store, ollama
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+async def _reset_store():
+    """Clear state store between tests so seeded events don't leak."""
+    await store.hydrate([], None, False, None)
+    yield
+    await store.hydrate([], None, False, None)
 
 
 @pytest.fixture

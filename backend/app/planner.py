@@ -143,12 +143,18 @@ class OllamaAutonomyPlanner:
         fallback: Optional[AutonomyPlanner] = None,
         mode: str = PLANNER_MODE_AUTO,
         state_store=None,
+        trajectory_store=None,
+        trajectory_max_chars: int = 1500,
+        trajectory_max_results: int = 3,
     ) -> None:
         normalized_mode = normalize_planner_mode(mode)
         self._ollama = ollama
         self._fallback = fallback or DeterministicAutonomyPlanner()
         self._mode = normalized_mode
         self._state_store = state_store
+        self._trajectory_store = trajectory_store
+        self._trajectory_max_chars = trajectory_max_chars
+        self._trajectory_max_results = trajectory_max_results
 
     @property
     def mode(self) -> str:
@@ -179,7 +185,20 @@ class OllamaAutonomyPlanner:
             except Exception:
                 pass
 
-        prompt = _build_plan_prompt(objective, desktop_context=desktop_context_text)
+        trajectory_text = ""
+        if self._trajectory_store:
+            try:
+                from .memory import format_trajectory_context
+                similar = await self._trajectory_store.find_similar(
+                    objective, limit=self._trajectory_max_results,
+                )
+                raw = format_trajectory_context(similar, max_chars=self._trajectory_max_chars)
+                if raw:
+                    trajectory_text = f"\n\nPast Experience (similar tasks attempted before):\n{raw}\n"
+            except Exception:
+                pass
+
+        prompt = _build_plan_prompt(objective, desktop_context=desktop_context_text, trajectory_context=trajectory_text)
         response = None
         used_structured_output = False
 
@@ -287,7 +306,7 @@ def _as_text_list(value: Any) -> List[str]:
     return []
 
 
-def _build_plan_prompt(objective: str, desktop_context: str = "") -> str:
+def _build_plan_prompt(objective: str, desktop_context: str = "", trajectory_context: str = "") -> str:
     return (
         "Create a deterministic desktop action plan for this objective. "
         "Return JSON only, with no markdown.\n\n"
@@ -300,6 +319,7 @@ def _build_plan_prompt(objective: str, desktop_context: str = "") -> str:
         "- preconditions: array of strings\n"
         "- postconditions: array of strings\n\n"
         f"{desktop_context}"
+        f"{trajectory_context}"
         "Objective:\n"
         f"{objective}"
     )

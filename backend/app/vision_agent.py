@@ -30,6 +30,7 @@ Process: {process_exe}
 
 {history_section}
 
+{trajectory_section}
 RULES:
 1. Respond with ONLY a JSON object. No markdown, no explanation.
 2. Each action should move you closer to the objective.
@@ -76,6 +77,9 @@ class VisionAgent:
         min_confidence: float = 0.3,
         max_consecutive_errors: int = 3,
         error_backoff_ms: int = 500,
+        trajectory_store=None,
+        trajectory_max_chars: int = 1500,
+        trajectory_max_results: int = 3,
     ) -> None:
         self._bridge = bridge
         self._ollama = ollama
@@ -84,6 +88,9 @@ class VisionAgent:
         self._min_confidence = max(0.0, min(1.0, min_confidence))
         self._max_consecutive_errors = max(1, max_consecutive_errors)
         self._error_backoff_ms = max(0, error_backoff_ms)
+        self._trajectory_store = trajectory_store
+        self._trajectory_max_chars = trajectory_max_chars
+        self._trajectory_max_results = trajectory_max_results
 
     async def run(
         self,
@@ -95,9 +102,23 @@ class VisionAgent:
         steps: List[AgentStep] = []
         consecutive_errors = 0
 
+        # Query trajectory memory once at start
+        trajectory_context = ""
+        if self._trajectory_store:
+            try:
+                from .memory import format_trajectory_context
+                similar = await self._trajectory_store.find_similar(
+                    objective, limit=self._trajectory_max_results,
+                )
+                trajectory_context = format_trajectory_context(
+                    similar, max_chars=self._trajectory_max_chars,
+                )
+            except Exception as exc:
+                logger.warning("VisionAgent: trajectory lookup failed: %s", exc)
+
         for _ in range(self._max_iterations):
             observation = await self._observe()
-            action = await self._reason(objective, observation, steps)
+            action = await self._reason(objective, observation, steps, trajectory_context=trajectory_context)
 
             step = AgentStep(observation=observation, action=action)
 
@@ -184,6 +205,7 @@ class VisionAgent:
         objective: str,
         observation: AgentObservation,
         history: List[AgentStep],
+        trajectory_context: str = "",
     ) -> AgentAction:
         uia_section = ""
         if observation.uia_summary:
@@ -198,12 +220,17 @@ class VisionAgent:
             )
         history_section = "HISTORY:\n" + "\n".join(history_lines) if history_lines else ""
 
+        trajectory_section = ""
+        if trajectory_context:
+            trajectory_section = f"PAST EXPERIENCE (similar objectives attempted before):\n{trajectory_context}"
+
         prompt = VISION_AGENT_PROMPT.format(
             objective=objective,
             window_title=observation.window_title,
             process_exe=observation.process_exe,
             uia_section=uia_section,
             history_section=history_section,
+            trajectory_section=trajectory_section,
         )
 
         messages = [{"role": "user", "content": prompt}]

@@ -19,6 +19,8 @@ const chatMessages = $("chat-messages");
 const chatWelcome = $("chat-welcome");
 const chatInput = $("chat-input");
 const sendBtn = $("send-btn");
+const micBtn = $("mic-btn");
+const voiceState = $("voice-state");
 const compactToggle = $("compact-toggle");
 const closeBtn = $("close-btn");
 
@@ -235,6 +237,188 @@ class AvatarEngine {
 // ── Init Avatar ─────────────────────────────────────────────────────
 const avatar = new AvatarEngine(canvas);
 
+// ── Voice Module ────────────────────────────────────────────────────
+let recognition = null;
+let recognitionActive = false;
+let mediaStream = null;
+let audioContext = null;
+let analyser = null;
+let audioData = null;
+let meterRaf = null;
+let speechActive = false;
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const hasSpeechRecognition = Boolean(SpeechRecognition);
+const hasSpeechSynthesis = "speechSynthesis" in window;
+
+// Hide mic button if STT unavailable
+if (!hasSpeechRecognition && micBtn) {
+  micBtn.classList.add("hidden");
+}
+
+async function ensureMicrophone() {
+  if (mediaStream) return true;
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    audioData = new Uint8Array(analyser.frequencyBinCount);
+    const source = audioContext.createMediaStreamSource(mediaStream);
+    source.connect(analyser);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function startMeterLoop() {
+  if (meterRaf) return;
+  function tick() {
+    if (!analyser || !audioData) { meterRaf = null; return; }
+    analyser.getByteFrequencyData(audioData);
+    let sum = 0;
+    for (let i = 0; i < audioData.length; i++) sum += audioData[i];
+    const avg = sum / audioData.length;
+    avatar.listenLevelTarget = Math.min(1, avg / 80);
+    meterRaf = requestAnimationFrame(tick);
+  }
+  meterRaf = requestAnimationFrame(tick);
+}
+
+function stopMeterLoop() {
+  if (meterRaf) { cancelAnimationFrame(meterRaf); meterRaf = null; }
+  avatar.listenLevelTarget = 0;
+}
+
+function setupSTT() {
+  if (!hasSpeechRecognition) return;
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = "en-US";
+
+  let finalTranscript = "";
+
+  recognition.onresult = (event) => {
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript;
+      } else {
+        interim += transcript;
+      }
+    }
+    chatInput.value = finalTranscript + interim;
+  };
+
+  recognition.onend = () => {
+    if (recognitionActive) {
+      try { recognition.start(); } catch {}
+    } else {
+      finalTranscript = "";
+    }
+  };
+
+  recognition.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-available") {
+      stopListening();
+    }
+  };
+}
+
+async function startListening() {
+  if (!recognition) setupSTT();
+  if (!recognition) return;
+
+  const micOk = await ensureMicrophone();
+  if (!micOk) return;
+
+  recognitionActive = true;
+  try { recognition.start(); } catch {}
+  startMeterLoop();
+  micBtn.classList.add("active");
+  voiceState.textContent = "listening";
+  voiceState.className = "voice-pill listening";
+}
+
+function stopListening() {
+  recognitionActive = false;
+  if (recognition) {
+    try { recognition.stop(); } catch {}
+  }
+  stopMeterLoop();
+  micBtn.classList.remove("active");
+  voiceState.className = "voice-pill hidden";
+}
+
+function toggleListening() {
+  if (recognitionActive) {
+    stopListening();
+  } else {
+    startListening();
+  }
+}
+
+function pickVoice() {
+  const voices = speechSynthesis.getVoices();
+  const preferred = ["Microsoft", "Aria", "Jenny", "Zira", "Google US English"];
+  for (const name of preferred) {
+    const match = voices.find((v) => v.name.includes(name) && v.lang.startsWith("en"));
+    if (match) return match;
+  }
+  return voices.find((v) => v.lang.startsWith("en")) || voices[0] || null;
+}
+
+function speakText(text) {
+  if (!hasSpeechSynthesis || !text) return;
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voice = pickVoice();
+  if (voice) utterance.voice = voice;
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+
+  utterance.onstart = () => {
+    speechActive = true;
+    avatar.setSpeaking(true);
+    voiceState.textContent = "speaking";
+    voiceState.className = "voice-pill speaking";
+  };
+
+  utterance.onboundary = () => {
+    avatar.bump(0.08);
+  };
+
+  utterance.onend = () => {
+    speechActive = false;
+    avatar.setSpeaking(false);
+    if (!recognitionActive) {
+      voiceState.className = "voice-pill hidden";
+    } else {
+      voiceState.textContent = "listening";
+      voiceState.className = "voice-pill listening";
+    }
+  };
+
+  utterance.onerror = () => {
+    speechActive = false;
+    avatar.setSpeaking(false);
+    if (!recognitionActive) {
+      voiceState.className = "voice-pill hidden";
+    }
+  };
+
+  speechSynthesis.speak(utterance);
+}
+
+// Preload voices
+if (hasSpeechSynthesis) {
+  speechSynthesis.getVoices();
+  speechSynthesis.addEventListener("voiceschanged", () => {});
+}
+
 // ── WebSocket ───────────────────────────────────────────────────────
 function connectWS() {
   if (ws && ws.readyState <= 1) return;
@@ -435,13 +619,15 @@ async function sendMessage(text) {
     if (res.ok) {
       const data = await res.json();
       avatar.bump(0.4);
-      appendMessage("agent", data.response || "No response", {
+      const agentText = data.response || "No response";
+      appendMessage("agent", agentText, {
         source: data.source,
         action_triggered: data.action_triggered,
       });
       if (data.desktop_context) {
         updateContext(data.desktop_context);
       }
+      speakText(agentText);
     } else {
       appendMessage("agent", "Something went wrong. Backend may be offline.", {
         source: "error",
@@ -462,6 +648,8 @@ async function sendMessage(text) {
 
 // ── Event Listeners ─────────────────────────────────────────────────
 sendBtn.addEventListener("click", () => sendMessage(chatInput.value));
+
+micBtn.addEventListener("click", toggleListening);
 
 chatInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
@@ -487,6 +675,14 @@ compactToggle.addEventListener("click", () => {
 // Close to tray
 closeBtn.addEventListener("click", () => {
   invoke("toggle_visibility");
+});
+
+// ── Cleanup ──────────────────────────────────────────────────────────
+window.addEventListener("beforeunload", () => {
+  stopListening();
+  if (hasSpeechSynthesis) speechSynthesis.cancel();
+  if (audioContext) { try { audioContext.close(); } catch {} }
+  if (mediaStream) { mediaStream.getTracks().forEach((t) => t.stop()); }
 });
 
 // ── Boot ────────────────────────────────────────────────────────────

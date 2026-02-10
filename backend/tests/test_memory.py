@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from app.memory import TrajectoryStore
+from app.memory import Trajectory, TrajectoryStore, format_trajectory_context
 from app.vision_agent import AgentAction, AgentObservation, AgentStep
 from datetime import datetime, timezone
 
@@ -121,6 +123,82 @@ async def test_step_error_stored():
 
     traj = await store.get_trajectory("t1")
     assert traj is not None
-    import json
     steps_data = json.loads(traj.steps_json)
     assert steps_data[0]["error"] == "connection lost"
+
+
+# ── format_trajectory_context tests ──────────────────────────────────
+
+
+def _make_trajectory(
+    objective: str = "open notepad",
+    outcome: str = "completed",
+    steps_json: str | None = None,
+    step_count: int = 2,
+) -> Trajectory:
+    if steps_json is None:
+        steps_json = json.dumps([
+            {"action": "click", "reasoning": "click button", "confidence": 0.9, "error": None},
+            {"action": "done", "reasoning": "finished", "confidence": 1.0, "error": None},
+        ])
+    return Trajectory(
+        trajectory_id="t1",
+        objective=objective,
+        steps_json=steps_json,
+        outcome=outcome,
+        step_count=step_count,
+        created_at="2025-07-01T12:00:00+00:00",
+    )
+
+
+def test_format_empty_list():
+    assert format_trajectory_context([]) == ""
+
+
+def test_format_single_trajectory():
+    traj = _make_trajectory()
+    result = format_trajectory_context([traj])
+    assert '[COMPLETED] "open notepad"' in result
+    assert "click" in result
+    assert "done" in result
+
+
+def test_format_failed_trajectory():
+    traj = _make_trajectory(outcome="failed")
+    result = format_trajectory_context([traj])
+    assert "[FAILED]" in result
+
+
+def test_format_truncation():
+    traj = _make_trajectory()
+    result = format_trajectory_context([traj], max_chars=30)
+    assert len(result) <= 30
+    assert result.endswith("...")
+
+
+def test_format_invalid_json_steps():
+    traj = _make_trajectory(steps_json="not-json")
+    result = format_trajectory_context([traj])
+    # Should still produce the header line without crashing
+    assert '[COMPLETED] "open notepad"' in result
+
+
+def test_format_step_with_error():
+    steps = json.dumps([
+        {"action": "click", "reasoning": "try clicking", "error": "element not found"},
+    ])
+    traj = _make_trajectory(steps_json=steps, step_count=1)
+    result = format_trajectory_context([traj])
+    assert "ERR:" in result
+    assert "element not found" in result
+
+
+def test_format_caps_steps_at_8():
+    steps = json.dumps([
+        {"action": f"step_{i}", "reasoning": f"reason {i}"}
+        for i in range(12)
+    ])
+    traj = _make_trajectory(steps_json=steps, step_count=12)
+    result = format_trajectory_context([traj])
+    assert "step_7" in result
+    assert "step_8" not in result

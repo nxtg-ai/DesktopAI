@@ -82,6 +82,8 @@ class Settings:
     vision_agent_min_confidence: float = float(_env("VISION_AGENT_MIN_CONFIDENCE", "0.3"))
     vision_agent_max_consecutive_errors: int = _env_int("VISION_AGENT_MAX_CONSECUTIVE_ERRORS", 3)
     vision_agent_error_backoff_ms: int = _env_int("VISION_AGENT_ERROR_BACKOFF_MS", 500)
+    trajectory_context_max_chars: int = _env_int("TRAJECTORY_CONTEXT_MAX_CHARS", 1500)
+    trajectory_context_max_results: int = _env_int("TRAJECTORY_CONTEXT_MAX_RESULTS", 3)
     cdp_endpoint: str = _env("CDP_ENDPOINT", "http://localhost:9222")
     ui_telemetry_artifact_dir: str = _env("UI_TELEMETRY_ARTIFACT_DIR", "artifacts/ui/telemetry")
     ui_telemetry_max_events: int = _env_int("UI_TELEMETRY_MAX_EVENTS", 5000)

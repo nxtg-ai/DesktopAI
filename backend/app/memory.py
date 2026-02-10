@@ -11,6 +11,53 @@ from typing import List, Optional
 
 from .vision_agent import AgentStep
 
+_OUTCOME_LABELS = {
+    "completed": "COMPLETED",
+    "failed": "FAILED",
+    "max_iterations": "MAX_ITERATIONS",
+}
+
+
+def format_trajectory_context(
+    trajectories: List[Trajectory],
+    max_chars: int = 1500,
+) -> str:
+    """Format past trajectories into a prompt-injectable string."""
+    if not trajectories:
+        return ""
+
+    parts: List[str] = []
+    for traj in trajectories:
+        label = _OUTCOME_LABELS.get(traj.outcome, traj.outcome.upper())
+        header = f"[{label}] \"{traj.objective}\" ({traj.step_count} steps)"
+
+        try:
+            steps_data = json.loads(traj.steps_json)
+        except (json.JSONDecodeError, TypeError):
+            steps_data = []
+
+        step_lines: List[str] = []
+        for i, step in enumerate(steps_data[:8]):
+            action = step.get("action", "?")
+            reasoning = str(step.get("reasoning", ""))[:60]
+            error = step.get("error")
+            line = f"  {i+1}. {action}"
+            if reasoning:
+                line += f" — {reasoning}"
+            if error:
+                line += f" [ERR: {str(error)[:40]}]"
+            step_lines.append(line)
+
+        entry = header
+        if step_lines:
+            entry += "\n" + "\n".join(step_lines)
+        parts.append(entry)
+
+    result = "\n\n".join(parts)
+    if len(result) > max_chars:
+        result = result[: max_chars - 3] + "..."
+    return result
+
 
 @dataclass
 class Trajectory:

@@ -149,6 +149,9 @@ planner = OllamaAutonomyPlanner(
     fallback=deterministic_planner,
     mode=settings.autonomy_planner_mode,
     state_store=store,
+    trajectory_store=trajectory_store,
+    trajectory_max_chars=settings.trajectory_context_max_chars,
+    trajectory_max_results=settings.trajectory_context_max_results,
 )
 action_executor = build_action_executor(
     mode=settings.action_executor_mode,
@@ -1133,6 +1136,9 @@ async def run_vision_agent(request: AutonomyStartRequest) -> dict:
         min_confidence=settings.vision_agent_min_confidence,
         max_consecutive_errors=settings.vision_agent_max_consecutive_errors,
         error_backoff_ms=settings.vision_agent_error_backoff_ms,
+        trajectory_store=trajectory_store,
+        trajectory_max_chars=settings.trajectory_context_max_chars,
+        trajectory_max_results=settings.trajectory_context_max_results,
     )
     runner = VisionAutonomousRunner(
         vision_agent=agent,
@@ -1206,6 +1212,9 @@ async def chat_endpoint(request: ChatRequest) -> dict:
                     min_confidence=settings.vision_agent_min_confidence,
                     max_consecutive_errors=settings.vision_agent_max_consecutive_errors,
                     error_backoff_ms=settings.vision_agent_error_backoff_ms,
+                    trajectory_store=trajectory_store,
+                    trajectory_max_chars=settings.trajectory_context_max_chars,
+                    trajectory_max_results=settings.trajectory_context_max_results,
                 )
                 runner = VisionAutonomousRunner(
                     vision_agent=agent,

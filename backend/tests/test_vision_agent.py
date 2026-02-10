@@ -194,3 +194,108 @@ async def test_act_error_recorded_in_step(agent, mock_bridge, mock_ollama):
     error_steps = [s for s in steps if s.error is not None]
     assert len(error_steps) >= 1
     assert "connection lost" in error_steps[0].error
+
+
+# ── Trajectory-informed planning tests ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_trajectory_store_queried_during_run(mock_bridge, mock_ollama):
+    """VisionAgent queries trajectory store at start of run."""
+    mock_bridge.execute.return_value = {
+        "ok": True,
+        "result": {"window_title": "Test", "process_exe": "test.exe"},
+    }
+    mock_ollama.chat.return_value = '{"action": "done", "parameters": {}, "reasoning": "done"}'
+
+    traj_store = AsyncMock()
+    traj_store.find_similar = AsyncMock(return_value=[])
+
+    agent = VisionAgent(
+        bridge=mock_bridge, ollama=mock_ollama, max_iterations=3,
+        trajectory_store=traj_store,
+    )
+    await agent.run("open notepad")
+    traj_store.find_similar.assert_called_once_with("open notepad", limit=3)
+
+
+@pytest.mark.asyncio
+async def test_trajectory_context_appears_in_prompt(mock_bridge, mock_ollama):
+    """When trajectory store returns results, the prompt includes past experience."""
+    from app.memory import Trajectory
+
+    mock_bridge.execute.return_value = {
+        "ok": True,
+        "result": {"window_title": "Test", "process_exe": "test.exe"},
+    }
+
+    captured_messages = []
+    async def capture_chat(messages):
+        captured_messages.append(messages)
+        return '{"action": "done", "parameters": {}, "reasoning": "done"}'
+
+    mock_ollama.chat = capture_chat
+    # Remove chat_with_images so it falls through to chat
+    if hasattr(mock_ollama, "chat_with_images"):
+        del mock_ollama.chat_with_images
+
+    traj = Trajectory(
+        trajectory_id="t1",
+        objective="open notepad",
+        steps_json=json.dumps([{"action": "click", "reasoning": "click start", "error": None}]),
+        outcome="completed",
+        step_count=1,
+        created_at="2025-07-01T00:00:00+00:00",
+    )
+    traj_store = AsyncMock()
+    traj_store.find_similar = AsyncMock(return_value=[traj])
+
+    agent = VisionAgent(
+        bridge=mock_bridge, ollama=mock_ollama, max_iterations=3,
+        trajectory_store=traj_store,
+    )
+    await agent.run("open notepad")
+
+    assert captured_messages
+    prompt = captured_messages[0][0]["content"]
+    assert "PAST EXPERIENCE" in prompt
+    assert "open notepad" in prompt
+
+
+@pytest.mark.asyncio
+async def test_trajectory_lookup_failure_nonfatal(mock_bridge, mock_ollama):
+    """If trajectory store raises, agent still runs normally."""
+    mock_bridge.execute.return_value = {
+        "ok": True,
+        "result": {"window_title": "Test", "process_exe": "test.exe"},
+    }
+    mock_ollama.chat.return_value = '{"action": "done", "parameters": {}, "reasoning": "done"}'
+
+    traj_store = AsyncMock()
+    traj_store.find_similar = AsyncMock(side_effect=RuntimeError("db gone"))
+
+    agent = VisionAgent(
+        bridge=mock_bridge, ollama=mock_ollama, max_iterations=3,
+        trajectory_store=traj_store,
+    )
+    steps = await agent.run("open notepad")
+    assert len(steps) == 1
+    assert steps[0].action.action == "done"
+
+
+@pytest.mark.asyncio
+async def test_no_trajectory_store_still_works(mock_bridge, mock_ollama):
+    """Agent with no trajectory store runs normally."""
+    mock_bridge.execute.return_value = {
+        "ok": True,
+        "result": {"window_title": "Test", "process_exe": "test.exe"},
+    }
+    mock_ollama.chat.return_value = '{"action": "done", "parameters": {}, "reasoning": "done"}'
+
+    agent = VisionAgent(
+        bridge=mock_bridge, ollama=mock_ollama, max_iterations=3,
+        trajectory_store=None,
+    )
+    steps = await agent.run("open notepad")
+    assert len(steps) == 1
+    assert steps[0].action.action == "done"

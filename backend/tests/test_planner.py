@@ -219,6 +219,101 @@ def test_ollama_planner_works_without_state_store():
     asyncio.run(scenario())
 
 
+class _TrajectoryCapturingOllama:
+    def __init__(self, available: bool, response: str | None):
+        self._available = available
+        self._response = response
+        self.chat_calls = []
+
+    async def available(self) -> bool:
+        return self._available
+
+    async def generate(self, prompt: str) -> str | None:
+        return self._response
+
+    async def chat(self, messages: list, format=None) -> str | None:
+        self.chat_calls.append(messages)
+        return self._response
+
+
+def test_ollama_planner_includes_trajectory_context_in_prompt():
+    async def scenario():
+        from unittest.mock import AsyncMock
+        from app.memory import Trajectory
+
+        traj = Trajectory(
+            trajectory_id="t1",
+            objective="reply to email",
+            steps_json='[{"action": "click", "reasoning": "click reply", "error": null}]',
+            outcome="completed",
+            step_count=1,
+            created_at="2025-07-01T00:00:00+00:00",
+        )
+
+        traj_store = AsyncMock()
+        traj_store.find_similar = AsyncMock(return_value=[traj])
+
+        ollama = _TrajectoryCapturingOllama(
+            available=True,
+            response='[{"action":"observe_desktop","description":"obs"},{"action":"verify_outcome","description":"ver"}]',
+        )
+        planner = OllamaAutonomyPlanner(
+            ollama=ollama,
+            mode="auto",
+            trajectory_store=traj_store,
+        )
+        steps = await planner.build_plan("reply to email")
+        assert len(steps) == 2
+        assert ollama.chat_calls
+        prompt = ollama.chat_calls[0][0]["content"]
+        assert "Past Experience" in prompt
+        assert "reply to email" in prompt
+
+    asyncio.run(scenario())
+
+
+def test_ollama_planner_trajectory_failure_nonfatal():
+    async def scenario():
+        from unittest.mock import AsyncMock
+
+        traj_store = AsyncMock()
+        traj_store.find_similar = AsyncMock(side_effect=RuntimeError("db gone"))
+
+        ollama = _TrajectoryCapturingOllama(
+            available=True,
+            response='[{"action":"observe_desktop","description":"obs"},{"action":"verify_outcome","description":"ver"}]',
+        )
+        planner = OllamaAutonomyPlanner(
+            ollama=ollama,
+            mode="auto",
+            trajectory_store=traj_store,
+        )
+        # Should not raise
+        steps = await planner.build_plan("test objective")
+        assert len(steps) == 2
+
+    asyncio.run(scenario())
+
+
+def test_ollama_planner_no_trajectory_store_works():
+    async def scenario():
+        ollama = _TrajectoryCapturingOllama(
+            available=True,
+            response='[{"action":"observe_desktop","description":"obs"},{"action":"verify_outcome","description":"ver"}]',
+        )
+        planner = OllamaAutonomyPlanner(
+            ollama=ollama,
+            mode="auto",
+            trajectory_store=None,
+        )
+        steps = await planner.build_plan("test objective")
+        assert len(steps) == 2
+        prompt = ollama.chat_calls[0][0]["content"]
+        assert "Past Experience" not in prompt
+
+    asyncio.run(scenario())
+
+
 def test_autonomous_runner_uses_injected_planner_steps():
     async def scenario():
         orchestrator = TaskOrchestrator()

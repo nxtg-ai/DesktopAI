@@ -440,6 +440,65 @@ html, body {
   box-shadow: none;
 }
 
+/* ── Mic Button ── */
+.mic-btn {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.mic-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.mic-btn.active {
+  background: rgba(255, 92, 92, 0.2);
+  border-color: rgba(255, 92, 92, 0.4);
+  color: var(--danger);
+  box-shadow: 0 0 12px rgba(255, 92, 92, 0.2);
+  animation: mic-pulse 1.5s ease-in-out infinite;
+}
+
+.mic-btn.hidden { display: none; }
+
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 92, 92, 0.15); }
+  50% { box-shadow: 0 0 16px rgba(255, 92, 92, 0.3); }
+}
+
+/* ── Voice State Pill ── */
+.voice-pill {
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.voice-pill.listening {
+  background: rgba(255, 92, 92, 0.2);
+  color: var(--danger);
+}
+
+.voice-pill.speaking {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.voice-pill.hidden { display: none; }
+
 /* ── Compact Mode ── */
 #app.compact .chat-section { display: none; }
 #app.compact .context-bar { display: none; }
