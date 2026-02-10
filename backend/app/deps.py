@@ -110,6 +110,7 @@ action_executor = build_action_executor(
     default_compose_text=settings.action_executor_default_compose_text,
     state_store=store,
     ollama=ollama,
+    bridge=bridge,
 )
 runtime_logs = RuntimeLogStore(max_entries=settings.runtime_log_max_entries)
 
@@ -151,9 +152,7 @@ def _dump(model):
 
 
 def _parse_event(data):
-    if hasattr(WindowEvent, "model_validate"):
-        return WindowEvent.model_validate(data)
-    return WindowEvent.parse_obj(data)
+    return WindowEvent.model_validate(data)
 
 
 def _parse_iso_timestamp(value) -> Optional[datetime]:

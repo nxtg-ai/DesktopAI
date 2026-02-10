@@ -210,6 +210,16 @@ def test_db_file_uri_does_not_create_literal_file_scheme_dirs(tmp_path, monkeypa
     assert not (tmp_path / "file:").exists()
 
 
+def test_composite_index_exists(tmp_path):
+    db_path = tmp_path / "index-check.db"
+    db = EventDatabase(str(db_path), retention_days=0, max_events=0)
+    cur = db._conn.cursor()
+    rows = cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_type_timestamp'"
+    ).fetchall()
+    assert len(rows) == 1
+
+
 def test_db_runtime_settings_round_trip_and_clear(tmp_path):
     db_path = tmp_path / "runtime-settings.db"
     db = EventDatabase(str(db_path), retention_days=0, max_events=0)

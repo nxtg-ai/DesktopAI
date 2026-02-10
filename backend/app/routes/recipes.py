@@ -13,6 +13,7 @@ router = APIRouter()
 
 @router.get("/api/recipes")
 async def list_recipes() -> dict:
+    """List automation recipes filtered by current desktop context."""
     from ..desktop_context import DesktopContext
 
     current_event = await store.current()
@@ -26,6 +27,7 @@ async def list_recipes() -> dict:
 
 @router.post("/api/recipes/{recipe_id}/run")
 async def run_recipe(recipe_id: str) -> dict:
+    """Execute a recipe by starting an autonomy run with its steps."""
     recipe = next((r for r in BUILTIN_RECIPES if r.recipe_id == recipe_id), None)
     if recipe is None:
         raise HTTPException(status_code=404, detail="Recipe not found")

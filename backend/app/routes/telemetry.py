@@ -13,6 +13,7 @@ router = APIRouter()
 
 @router.post("/api/ui-telemetry")
 async def post_ui_telemetry(request: UiTelemetryIngestRequest) -> dict:
+    """Ingest a batch of UI telemetry events."""
     accepted, artifact_files = await ui_telemetry.ingest(request.events)
     return {
         "accepted": accepted,
@@ -23,18 +24,21 @@ async def post_ui_telemetry(request: UiTelemetryIngestRequest) -> dict:
 
 @router.get("/api/ui-telemetry")
 async def list_ui_telemetry(session_id: Optional[str] = None, limit: int = 200) -> dict:
+    """List UI telemetry events with optional session filter."""
     events = await ui_telemetry.list_events(session_id=session_id, limit=limit)
     return {"events": [_dump(event) for event in events]}
 
 
 @router.get("/api/ui-telemetry/sessions")
 async def list_ui_telemetry_sessions(limit: int = 100) -> dict:
+    """List UI telemetry sessions."""
     sessions = await ui_telemetry.list_sessions(limit=limit)
     return {"sessions": sessions}
 
 
 @router.post("/api/ui-telemetry/reset")
 async def reset_ui_telemetry(clear_artifacts: bool = True) -> dict:
+    """Clear all UI telemetry events and optionally remove artifacts."""
     cleared = await ui_telemetry.reset(clear_artifacts=clear_artifacts)
     return {"cleared": cleared}
 
@@ -47,6 +51,7 @@ async def list_runtime_logs(
     since: Optional[str] = None,
     until: Optional[str] = None,
 ) -> dict:
+    """List runtime log entries with optional level, text, and time filters."""
     if since and _parse_iso_timestamp(since) is None:
         raise HTTPException(status_code=400, detail="invalid since timestamp")
     if until and _parse_iso_timestamp(until) is None:
@@ -63,6 +68,7 @@ async def list_runtime_logs(
 
 @router.post("/api/runtime-logs/reset")
 async def reset_runtime_logs() -> dict:
+    """Clear all buffered runtime log entries."""
     cleared = runtime_logs.clear()
     return {"cleared": cleared}
 
@@ -74,6 +80,7 @@ async def correlate_runtime_logs(
     level: Optional[str] = None,
     contains: Optional[str] = None,
 ) -> dict:
+    """Correlate runtime logs with a UI telemetry session time window."""
     session = (session_id or "").strip()
     if not session:
         raise HTTPException(status_code=400, detail="session_id is required")

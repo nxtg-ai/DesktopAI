@@ -43,6 +43,7 @@ def _autonomy_http_error(exc: Exception) -> HTTPException:
 
 @router.post("/api/autonomy/runs")
 async def start_autonomy_run(request: AutonomyStartRequest) -> dict:
+    """Start a new autonomous task execution run."""
     try:
         run = await autonomy.start(request)
     except Exception as exc:
@@ -52,11 +53,13 @@ async def start_autonomy_run(request: AutonomyStartRequest) -> dict:
 
 @router.get("/api/autonomy/planner")
 async def get_autonomy_planner() -> dict:
+    """Return current autonomy planner mode and Ollama status."""
     return await _planner_status_payload()
 
 
 @router.post("/api/autonomy/planner")
 async def set_autonomy_planner(request: AutonomyPlannerModeRequest) -> dict:
+    """Set the autonomy planner mode at runtime."""
     planner.set_mode(request.mode)
     await db.set_runtime_setting(RUNTIME_SETTING_PLANNER_MODE, planner.mode)
     _deps.planner_mode_source = PLANNER_SOURCE_RUNTIME_OVERRIDE
@@ -65,6 +68,7 @@ async def set_autonomy_planner(request: AutonomyPlannerModeRequest) -> dict:
 
 @router.delete("/api/autonomy/planner")
 async def clear_autonomy_planner_override() -> dict:
+    """Reset the planner mode to the config default."""
     await db.delete_runtime_setting(RUNTIME_SETTING_PLANNER_MODE)
     planner.set_mode(settings.autonomy_planner_mode)
     _deps.planner_mode_source = PLANNER_SOURCE_CONFIG_DEFAULT
@@ -73,12 +77,14 @@ async def clear_autonomy_planner_override() -> dict:
 
 @router.get("/api/autonomy/runs")
 async def list_autonomy_runs(limit: int = 50) -> dict:
+    """List recent autonomy runs ordered by update time."""
     runs = await autonomy.list_runs(limit=limit)
     return {"runs": [_dump(run) for run in runs]}
 
 
 @router.get("/api/autonomy/runs/{run_id}")
 async def get_autonomy_run(run_id: str) -> dict:
+    """Get a single autonomy run by ID."""
     run = await autonomy.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
@@ -87,6 +93,7 @@ async def get_autonomy_run(run_id: str) -> dict:
 
 @router.post("/api/autonomy/runs/{run_id}/approve")
 async def approve_autonomy_run(run_id: str, request: AutonomyApproveRequest) -> dict:
+    """Approve an irreversible action in a waiting autonomy run."""
     try:
         run = await autonomy.approve(run_id, request)
     except Exception as exc:
@@ -96,6 +103,7 @@ async def approve_autonomy_run(run_id: str, request: AutonomyApproveRequest) -> 
 
 @router.post("/api/autonomy/runs/{run_id}/cancel")
 async def cancel_autonomy_run(run_id: str) -> dict:
+    """Cancel an in-progress autonomy run."""
     try:
         run = await autonomy.cancel(run_id)
     except Exception as exc:
@@ -233,11 +241,13 @@ async def _execute_readiness_gate(request: ReadinessGateRequest) -> dict:
 
 @router.post("/api/readiness/gate")
 async def run_readiness_gate(request: ReadinessGateRequest) -> dict:
+    """Execute a single readiness gate check with timeout and polling."""
     return await _execute_readiness_gate(request)
 
 
 @router.post("/api/readiness/matrix")
 async def run_readiness_matrix(request: ReadinessMatrixRequest) -> dict:
+    """Run multiple readiness gates across a list of objectives."""
     started_at = datetime.now(timezone.utc)
     results = []
     passed = 0

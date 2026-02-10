@@ -13,6 +13,7 @@ router = APIRouter()
 
 @router.get("/api/state", response_model=StateResponse)
 async def get_state() -> StateResponse:
+    """Return the current event state with idle status."""
     current = await store.current()
     count = await store.event_count()
     idle, idle_since = await store.idle_state()
@@ -28,6 +29,7 @@ async def get_state() -> StateResponse:
 
 @router.get("/api/state/snapshot")
 async def get_desktop_snapshot() -> dict:
+    """Return a desktop context snapshot for the agent vision panel."""
     from ..desktop_context import DesktopContext
 
     current = await store.current()
@@ -49,6 +51,7 @@ async def get_desktop_snapshot() -> dict:
 
 @router.get("/api/events")
 async def get_events(limit: Optional[int] = None) -> dict:
+    """List recent desktop events."""
     if limit is None:
         limit = settings.event_limit_default
     events = await store.events(limit=limit)
@@ -57,4 +60,5 @@ async def get_events(limit: Optional[int] = None) -> dict:
 
 @router.get("/api/collector")
 async def get_collector_status() -> dict:
+    """Return Windows collector connection status and event counters."""
     return await collector_status.snapshot()

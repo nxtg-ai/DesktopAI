@@ -53,11 +53,13 @@ def _build_context_response(ctx) -> str:
 
 @router.get("/api/agent/bridge")
 async def get_bridge_status() -> dict:
+    """Return the current collector bridge connection status."""
     return bridge.status()
 
 
 @router.post("/api/agent/run")
 async def run_vision_agent(request: AutonomyStartRequest) -> dict:
+    """Start a vision-based autonomous agent run via the collector bridge."""
     from ..vision_agent import VisionAgent
 
     if not bridge.connected:
@@ -89,6 +91,7 @@ async def run_vision_agent(request: AutonomyStartRequest) -> dict:
 
 @router.post("/api/chat")
 async def chat_endpoint(request: ChatRequest) -> dict:
+    """Process a chat message with desktop context and optional action execution."""
     from ..desktop_context import DesktopContext
 
     current_event = await store.current()

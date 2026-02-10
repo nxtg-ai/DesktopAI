@@ -29,11 +29,13 @@ router = APIRouter()
 
 @router.get("/api/ollama")
 async def ollama_status() -> dict:
+    """Return Ollama connection status and diagnostics."""
     return await _ollama_status_payload()
 
 
 @router.get("/api/ollama/models")
 async def ollama_models() -> dict:
+    """List installed Ollama models."""
     models = await ollama.list_models()
     payload = await _ollama_status_payload()
     return {
@@ -47,6 +49,7 @@ async def ollama_models() -> dict:
 
 @router.post("/api/ollama/model")
 async def set_ollama_model(request: OllamaModelRequest) -> dict:
+    """Set the active Ollama model at runtime."""
     selected = str(request.model or "").strip()
     if not selected:
         raise HTTPException(status_code=422, detail="model is required")
@@ -61,6 +64,7 @@ async def set_ollama_model(request: OllamaModelRequest) -> dict:
 
 @router.delete("/api/ollama/model")
 async def clear_ollama_model_override() -> dict:
+    """Reset the active Ollama model to the config default."""
     await db.delete_runtime_setting(RUNTIME_SETTING_OLLAMA_MODEL)
     ollama.reset_active_model()
     _deps.ollama_model_source = PLANNER_SOURCE_CONFIG_DEFAULT
@@ -69,6 +73,7 @@ async def clear_ollama_model_override() -> dict:
 
 @router.post("/api/ollama/probe")
 async def ollama_probe(request: OllamaProbeRequest) -> dict:
+    """Probe Ollama with a test prompt to verify connectivity."""
     probe = await ollama.probe(
         prompt=request.prompt,
         timeout_s=request.timeout_s,
@@ -82,6 +87,7 @@ async def ollama_probe(request: OllamaProbeRequest) -> dict:
 
 @router.post("/api/summarize")
 async def summarize() -> dict:
+    """Generate an LLM summary of the current desktop activity."""
     available = await ollama.available()
     if not available:
         raise HTTPException(status_code=503, detail="Ollama not available")
@@ -119,6 +125,7 @@ async def summarize() -> dict:
 
 @router.post("/api/classify")
 async def classify(request: ClassifyRequest) -> dict:
+    """Classify a window event into an activity category."""
     event = WindowEvent(
         type=request.type,
         hwnd="0x0",

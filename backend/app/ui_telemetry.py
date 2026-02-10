@@ -30,9 +30,7 @@ class UiTelemetryStore:
         return self._artifact_dir / f"{safe}.jsonl"
 
     def _parse_event(self, payload: dict) -> UiTelemetryEvent:
-        if hasattr(UiTelemetryEvent, "model_validate"):
-            return UiTelemetryEvent.model_validate(payload)
-        return UiTelemetryEvent.parse_obj(payload)
+        return UiTelemetryEvent.model_validate(payload)
 
     def _read_artifact_events(self, session_id: str, limit: int) -> list[UiTelemetryEvent]:
         path = self._artifact_path_for_session(session_id)

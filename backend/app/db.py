@@ -110,6 +110,9 @@ class EventDatabase:
                 "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)"
             )
             cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_type_timestamp ON events(type, timestamp DESC)"
+            )
+            cur.execute(
                 "CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
             cur.execute(
@@ -272,10 +275,7 @@ class EventDatabase:
         await asyncio.to_thread(self._upsert_autonomy_run, run)
 
     def _upsert_autonomy_run(self, run: AutonomyRunRecord) -> None:
-        if hasattr(run, "model_dump"):
-            payload = run.model_dump(mode="json")
-        else:
-            payload = run.dict()
+        payload = run.model_dump(mode="json")
         updated_at = payload.get("updated_at") or datetime.now(timezone.utc).isoformat()
         with self._lock:
             cur = self._conn.cursor()
@@ -312,20 +312,14 @@ class EventDatabase:
         items: List[AutonomyRunRecord] = []
         for row in rows:
             payload = json.loads(row["payload_json"])
-            if hasattr(AutonomyRunRecord, "model_validate"):
-                items.append(AutonomyRunRecord.model_validate(payload))
-            else:
-                items.append(AutonomyRunRecord.parse_obj(payload))
+            items.append(AutonomyRunRecord.model_validate(payload))
         return items
 
     async def upsert_task_record(self, task: TaskRecord) -> None:
         await asyncio.to_thread(self._upsert_task_record, task)
 
     def _upsert_task_record(self, task: TaskRecord) -> None:
-        if hasattr(task, "model_dump"):
-            payload = task.model_dump(mode="json")
-        else:
-            payload = task.dict()
+        payload = task.model_dump(mode="json")
         updated_at = payload.get("updated_at") or datetime.now(timezone.utc).isoformat()
         with self._lock:
             cur = self._conn.cursor()
@@ -362,10 +356,7 @@ class EventDatabase:
         items: List[TaskRecord] = []
         for row in rows:
             payload = json.loads(row["payload_json"])
-            if hasattr(TaskRecord, "model_validate"):
-                items.append(TaskRecord.model_validate(payload))
-            else:
-                items.append(TaskRecord.parse_obj(payload))
+            items.append(TaskRecord.model_validate(payload))
         return items
 
     def _apply_autonomy_retention(self, cur: sqlite3.Cursor) -> None:
@@ -501,10 +492,7 @@ class EventDatabase:
             timestamp = timestamp.isoformat()
         uia_json = None
         if event.uia is not None:
-            if hasattr(event.uia, "model_dump"):
-                uia_json = json.dumps(event.uia.model_dump())
-            else:
-                uia_json = json.dumps(event.uia.dict())
+            uia_json = json.dumps(event.uia.model_dump())
         return {
             "type": event.type,
             "hwnd": event.hwnd,
@@ -532,9 +520,7 @@ class EventDatabase:
         }
         if row["uia_json"]:
             payload["uia"] = json.loads(row["uia_json"])
-        if hasattr(WindowEvent, "model_validate"):
-            return WindowEvent.model_validate(payload)
-        return WindowEvent.parse_obj(payload)
+        return WindowEvent.model_validate(payload)
 
     def _parse_datetime(self, value: Optional[str]) -> Optional[datetime]:
         if not value:

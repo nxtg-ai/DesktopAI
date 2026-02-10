@@ -75,12 +75,14 @@ async def _handle_event(event: WindowEvent, *, transport: str) -> None:
 
 @router.post("/api/events")
 async def post_event(event: WindowEvent) -> dict:
+    """Ingest a single desktop event via HTTP."""
     await _handle_event(event, transport="http")
     return {"status": "ok"}
 
 
 @router.websocket("/ingest")
 async def ingest_ws(ws: WebSocket) -> None:
+    """WebSocket endpoint for real-time event ingestion from the collector."""
     await ws.accept()
     await collector_status.note_ws_connected(datetime.now(timezone.utc))
     bridge.attach(ws)

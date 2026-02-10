@@ -645,18 +645,23 @@ def build_action_executor(
             ) from exc
 
     if normalized in {"auto", ""}:
-        if not _is_windows_platform():
-            return SimulatedTaskActionExecutor()
-
-        windows = WindowsPowerShellActionExecutor(
-            powershell_executable=powershell_executable,
-            timeout_s=timeout_s,
-            default_compose_text=default_compose_text,
-            state_store=state_store,
-            ollama=ollama,
-        )
-        if windows.status().get("available"):
-            return windows
+        # 1. Prefer bridge (works cross-platform over WebSocket to collector)
+        if bridge is not None:
+            return BridgeActionExecutor(
+                bridge=bridge, timeout_s=timeout_s, ollama=ollama,
+            )
+        # 2. On Windows, try PowerShell
+        if _is_windows_platform():
+            windows = WindowsPowerShellActionExecutor(
+                powershell_executable=powershell_executable,
+                timeout_s=timeout_s,
+                default_compose_text=default_compose_text,
+                state_store=state_store,
+                ollama=ollama,
+            )
+            if windows.status().get("available"):
+                return windows
+        # 3. Fallback
         return SimulatedTaskActionExecutor()
 
     raise ValueError(f"unsupported ACTION_EXECUTOR_MODE: {mode}")
@@ -697,6 +702,7 @@ def build_action_executors(
         cdp_endpoint=cdp_endpoint,
         state_store=state_store,
         ollama=ollama,
+        bridge=bridge,
     )
 
     # Try to add browser executor

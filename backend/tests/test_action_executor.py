@@ -212,7 +212,32 @@ def test_build_unsupported_mode():
         build_action_executor(mode="quantum", powershell_executable="", timeout_s=5)
 
 
-def test_build_auto_non_windows():
+def test_build_auto_non_windows_no_bridge():
     with patch("app.action_executor._is_windows_platform", return_value=False):
         exe = build_action_executor(mode="auto", powershell_executable="", timeout_s=5)
+        assert isinstance(exe, SimulatedTaskActionExecutor)
+
+
+def test_auto_mode_prefers_bridge_when_provided():
+    mock_bridge = MagicMock()
+    with patch("app.action_executor._is_windows_platform", return_value=False):
+        exe = build_action_executor(mode="auto", powershell_executable="", timeout_s=5, bridge=mock_bridge)
+        assert isinstance(exe, BridgeActionExecutor)
+
+
+def test_auto_mode_falls_back_without_bridge():
+    with patch("app.action_executor._is_windows_platform", return_value=False):
+        exe = build_action_executor(mode="auto", powershell_executable="", timeout_s=5, bridge=None)
+        assert isinstance(exe, SimulatedTaskActionExecutor)
+
+
+def test_bridge_mode_raises_without_bridge():
+    with pytest.raises(ValueError, match="no bridge"):
+        build_action_executor(mode="bridge", powershell_executable="", timeout_s=5, bridge=None)
+
+
+def test_auto_mode_bridge_none_no_crash():
+    """Passing bridge=None to auto mode should not crash, just fall back."""
+    with patch("app.action_executor._is_windows_platform", return_value=False):
+        exe = build_action_executor(mode="auto", powershell_executable="", timeout_s=5, bridge=None)
         assert isinstance(exe, SimulatedTaskActionExecutor)

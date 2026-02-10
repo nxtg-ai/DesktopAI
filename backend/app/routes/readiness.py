@@ -26,16 +26,19 @@ router = APIRouter()
 
 @router.get("/api/executor")
 async def get_executor_status() -> dict:
+    """Return current action executor mode and availability."""
     return tasks.executor_status()
 
 
 @router.get("/api/executor/preflight")
 async def get_executor_preflight() -> dict:
+    """Run executor preflight checks and return results."""
     return await tasks.executor_preflight()
 
 
 @router.get("/api/readiness/status")
 async def get_readiness_status() -> dict:
+    """Return comprehensive system readiness with all subsystem checks."""
     preflight = await tasks.executor_preflight()
     collector = await collector_status.snapshot()
     ollama_available = await ollama.available()
@@ -123,4 +126,5 @@ async def get_readiness_status() -> dict:
 
 @router.get("/api/selftest")
 async def selftest() -> dict:
+    """Run internal self-test diagnostics."""
     return run_selftest()

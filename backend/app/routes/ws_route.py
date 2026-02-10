@@ -10,6 +10,7 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def ui_ws(ws: WebSocket) -> None:
+    """WebSocket endpoint for real-time UI state updates."""
     accepted = await hub.add(ws)
     if not accepted:
         return
