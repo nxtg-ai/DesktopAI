@@ -21,6 +21,7 @@ const webServerConfig = {
     CLASSIFIER_USE_OLLAMA: "0",
     AUTONOMY_PLANNER_MODE: "deterministic",
     UI_TELEMETRY_ARTIFACT_DIR: "artifacts/ui/telemetry",
+    RATE_LIMIT_PER_MINUTE: "120",
   },
 };
 
