@@ -14,6 +14,7 @@ from ..deps import (
     chat_memory,
     llm,
     ollama,
+    personality_adapter,
     store,
     trajectory_store,
 )
@@ -68,6 +69,25 @@ def _build_context_response(ctx) -> str:
     if ctx.screenshot_b64:
         parts.append("I also have a screenshot of your desktop.")
     return " ".join(parts)
+
+
+@router.get("/api/personality")
+async def get_personality_status() -> dict:
+    """Return current personality mode and auto-adaptation state."""
+    session = await store.session_summary()
+    energy = personality_adapter.classify_energy(session)
+    recommended = personality_adapter.recommend(session)
+    return {
+        "current_mode": settings.personality_mode,
+        "auto_adapt_enabled": settings.personality_auto_adapt,
+        "session_energy": energy,
+        "recommended_mode": recommended,
+        "session_summary": {
+            "app_switches": session.get("app_switches", 0),
+            "unique_apps": session.get("unique_apps", 0),
+            "session_duration_s": session.get("session_duration_s", 0),
+        },
+    }
 
 
 @router.get("/api/agent/bridge")
@@ -199,7 +219,13 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     # Fetch session summary for enriched context
     session = await store.session_summary()
 
-    mode = request.personality_mode or settings.personality_mode
+    # Personality mode: explicit request > auto-adapt > config default
+    if request.personality_mode:
+        mode = request.personality_mode
+    elif settings.personality_auto_adapt:
+        mode = personality_adapter.recommend(session)
+    else:
+        mode = settings.personality_mode
 
     is_available = await llm.available()
     if is_available:

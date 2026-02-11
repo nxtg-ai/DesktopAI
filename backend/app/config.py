@@ -72,6 +72,7 @@ class Settings:
     openai_model: str = _env("OPENAI_MODEL", "gpt-4o")
     autonomy_planner_mode: str = _autonomy_planner_mode()
     personality_mode: str = _env("PERSONALITY_MODE", "assistant")
+    personality_auto_adapt: bool = _env_bool("PERSONALITY_AUTO_ADAPT", False)
     classifier_default: str = _env("CLASSIFIER_DEFAULT", "docs")
     classifier_use_ollama: bool = _env_bool("CLASSIFIER_USE_OLLAMA", False)
     action_executor_mode: str = _env("ACTION_EXECUTOR_MODE", "auto")

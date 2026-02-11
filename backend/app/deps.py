@@ -24,6 +24,7 @@ from .notification_engine import NotificationEngine
 from .notifications import NotificationStore
 from .ollama import OllamaClient
 from .orchestrator import TaskOrchestrator
+from .personality_adapter import PersonalityAdapter
 from .planner import (
     PLANNER_MODE_OLLAMA_REQUIRED,
     PLANNER_SUPPORTED_MODES,
@@ -101,6 +102,7 @@ notification_engine = NotificationEngine(
     enabled=settings.notifications_enabled,
     idle_threshold_s=settings.notification_idle_threshold_s,
 )
+personality_adapter = PersonalityAdapter()
 classifier = ActivityClassifier(
     ollama,
     default_category=settings.classifier_default,
