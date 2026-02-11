@@ -19,6 +19,10 @@
           <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
             <span id="theme-icon">&#9790;</span>
           </button>
+          <span id="collector-status" class="collector-status disconnected" title="Windows collector status">
+            <span class="collector-dot"></span>
+            <span class="collector-label">Collector</span>
+          </span>
           <button id="notification-bell" class="notification-bell" aria-label="Notifications">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             <span id="notification-count" class="notification-badge" hidden>0</span>
@@ -89,7 +93,7 @@
             <input type="text" id="chat-input" placeholder="Ask something or give a command…" aria-label="Chat message" />
             <button class="btn" id="chat-send-btn">Send</button>
           </div>
-          <p class="kbd-hint">Press / to focus &middot; Ctrl+Enter to send &middot; Esc to clear</p>
+          <p class="kbd-hint">/ focus &middot; Ctrl+Enter send &middot; Esc clear &middot; Ctrl+Shift+X kill switch</p>
         </div>
       </section>
 

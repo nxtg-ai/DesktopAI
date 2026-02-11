@@ -1,7 +1,7 @@
 /** Autonomy controls, readiness gate, and readiness matrix. */
 
 import {
-  appState, autonomyStatusEl, autonomyObjectiveEl, autonomyMaxIterationsEl,
+  appState, avatar, autonomyStatusEl, autonomyObjectiveEl, autonomyMaxIterationsEl,
   autonomyParallelAgentsEl, autonomyAutoApproveEl, autonomyStartBtn, autonomyApproveBtn,
   autonomyCancelBtn, autonomyRunMetaEl, autonomyLogEl, readinessGateBtn,
   readinessGateResultEl, readinessMatrixObjectivesEl, readinessMatrixBtn,
@@ -47,6 +47,7 @@ export function applyRunUiState(run) {
     autonomyApproveBtn.disabled = true;
     autonomyCancelBtn.disabled = true;
     autonomyStartBtn.disabled = false;
+    avatar.setAutonomyActive(false);
     renderAutonomyLog([]);
     return;
   }
@@ -67,6 +68,7 @@ export function applyRunUiState(run) {
   autonomyApproveBtn.disabled = run.status !== "waiting_approval" || !appState.activeApprovalToken;
   autonomyCancelBtn.disabled = ["completed", "failed", "cancelled"].includes(run.status);
   autonomyStartBtn.disabled = run.status === "running" || run.status === "waiting_approval";
+  avatar.setAutonomyActive(run.status === "running" || run.status === "waiting_approval");
   renderAutonomyLog(run.agent_log || []);
 }
 

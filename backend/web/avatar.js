@@ -5,6 +5,7 @@ const STATUS_COLORS = {
   live: 0x00b8a9,
   warn: 0xff4d4d,
   idle: 0x6f8f7a,
+  autonomy: 0x4fc3f7,
 };
 
 export class AvatarEngine {
@@ -31,6 +32,7 @@ export class AvatarEngine {
     this.currentColor = new THREE.Color(STATUS_COLORS.connecting);
     this.connection = "connecting";
     this.isIdle = false;
+    this.autonomyActive = false;
 
     this._setupLights();
     this._setupMeshes();
@@ -141,6 +143,17 @@ export class AvatarEngine {
     }
   }
 
+  setAutonomyActive(active) {
+    this.autonomyActive = Boolean(active);
+    if (this.autonomyActive) {
+      this.targetColor.setHex(STATUS_COLORS.autonomy);
+    } else if (this.isIdle) {
+      this.targetColor.setHex(STATUS_COLORS.idle);
+    } else if (this.connection === "live") {
+      this.targetColor.setHex(STATUS_COLORS.live);
+    }
+  }
+
   setListeningLevel(level) {
     this.listenLevelTarget = Math.max(0, Math.min(1, level || 0));
   }
@@ -170,17 +183,21 @@ export class AvatarEngine {
 
     const speechKick = this.speaking ? 0.1 : 0;
     const voiceKick = this.listenLevel * 0.14;
+    const autonomyKick = this.autonomyActive ? 0.06 : 0;
     const basePulse = this.isIdle ? 0.96 : 1.0;
-    const wave = Math.sin(t * (this.isIdle ? 1.2 : 2.8)) * (this.isIdle ? 0.03 : 0.06);
-    const kick = this.energy * 0.08 + speechKick + voiceKick;
+    const pulseSpeed = this.autonomyActive ? 4.2 : (this.isIdle ? 1.2 : 2.8);
+    const pulseAmp = this.autonomyActive ? 0.08 : (this.isIdle ? 0.03 : 0.06);
+    const wave = Math.sin(t * pulseSpeed) * pulseAmp;
+    const kick = this.energy * 0.08 + speechKick + voiceKick + autonomyKick;
     const scale = basePulse + wave + kick;
     this.orb.scale.setScalar(scale);
     this.shell.scale.setScalar(1.12 + wave * 0.6 + kick * 0.7);
 
-    this.ringA.rotation.z += 0.004 + this.energy * 0.003 + this.listenLevel * 0.01;
-    this.ringA.rotation.x += 0.0012 + this.listenLevel * 0.002;
-    this.ringB.rotation.y -= 0.005 + this.energy * 0.004 + this.listenLevel * 0.012;
-    this.ringB.rotation.x -= 0.0010 + this.listenLevel * 0.002;
+    const autoSpin = this.autonomyActive ? 0.008 : 0;
+    this.ringA.rotation.z += 0.004 + this.energy * 0.003 + this.listenLevel * 0.01 + autoSpin;
+    this.ringA.rotation.x += 0.0012 + this.listenLevel * 0.002 + autoSpin * 0.5;
+    this.ringB.rotation.y -= 0.005 + this.energy * 0.004 + this.listenLevel * 0.012 + autoSpin;
+    this.ringB.rotation.x -= 0.0010 + this.listenLevel * 0.002 + autoSpin * 0.5;
 
     const pulseScale = 1 + Math.sin(t * 2.0) * 0.06 + this.energy * 0.12 + this.listenLevel * 0.24;
     this.pulse.scale.setScalar(pulseScale);

@@ -1,11 +1,18 @@
 /** WebSocket connection and real-time event handling. */
 
-import { appState, statusEl, avatar, MAX_EVENTS } from "./state.js";
+import { appState, statusEl, collectorStatusEl, avatar, MAX_EVENTS } from "./state.js";
 import { queueTelemetry } from "./telemetry.js";
 import { renderEvents, updateCurrent } from "./events.js";
 import { applyRunUiState } from "./autonomy.js";
 import { refreshAgentVision } from "./agent-vision.js";
 import { handleNotificationWsMessage } from "./notifications.js";
+
+function updateCollectorBadge(connected) {
+  if (!collectorStatusEl) return;
+  collectorStatusEl.classList.toggle("connected", connected);
+  collectorStatusEl.classList.toggle("disconnected", !connected);
+  collectorStatusEl.title = connected ? "Windows collector connected" : "Windows collector disconnected";
+}
 
 function setStatus(text, tone) {
   statusEl.textContent = text;
@@ -27,6 +34,11 @@ export async function fetchSnapshot() {
     appState.events = eventsData.events || [];
     updateCurrent(state);
     renderEvents();
+    try {
+      const bridgeResp = await fetch("/api/agent/bridge");
+      const bridgeData = await bridgeResp.json();
+      updateCollectorBadge(Boolean(bridgeData.connected));
+    } catch { /* bridge status optional */ }
     queueTelemetry("snapshot_fetched", "initial snapshot fetched", { events: appState.events.length, has_current: Boolean(state.current) });
   } catch (err) {
     console.error("snapshot error", err);
@@ -50,7 +62,8 @@ export function connectWs() {
         updateCurrent(payload.state);
         renderEvents();
         applyRunUiState(payload.autonomy_run || null);
-        queueTelemetry("ws_snapshot", "ws snapshot received", { events: appState.events.length, has_run: Boolean(payload.autonomy_run) });
+        updateCollectorBadge(Boolean(payload.bridge_connected));
+        queueTelemetry("ws_snapshot", "ws snapshot received", { events: appState.events.length, has_run: Boolean(payload.autonomy_run), bridge_connected: Boolean(payload.bridge_connected) });
       }
       if (payload.type === "event" && payload.event) {
         appState.events.push(payload.event);

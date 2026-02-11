@@ -3,7 +3,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..config import settings
-from ..deps import _dump, autonomy, hub, store
+from ..deps import _dump, autonomy, bridge, hub, store
 
 router = APIRouter()
 
@@ -30,6 +30,7 @@ async def ui_ws(ws: WebSocket) -> None:
             },
             "events": [_dump(event) for event in events[-settings.event_limit_default :]],
             "autonomy_run": _dump(latest_run) if latest_run else None,
+            "bridge_connected": bridge.connected if bridge else False,
         }
     )
     try:

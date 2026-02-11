@@ -916,6 +916,46 @@ h1 {
   --shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
+/* ── Collector Status Badge ── */
+.collector-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: all 0.3s ease;
+}
+
+.collector-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.collector-status.connected .collector-dot {
+  background: #00b8a9;
+  box-shadow: 0 0 6px rgba(0, 184, 169, 0.5);
+}
+
+.collector-status.connected .collector-label {
+  color: #00b8a9;
+}
+
+.collector-status.disconnected .collector-dot {
+  background: #ff4d4d;
+  box-shadow: 0 0 4px rgba(255, 77, 77, 0.3);
+}
+
+.collector-status.disconnected .collector-label {
+  color: #ff4d4d;
+}
+
 /* ── Theme Toggle ── */
 .theme-toggle {
   background: var(--card);

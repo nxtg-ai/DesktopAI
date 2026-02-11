@@ -1,7 +1,8 @@
 /** Keyboard shortcuts for the DesktopAI UI. */
 
-import { chatInputEl } from "./state.js";
+import { chatInputEl, appState } from "./state.js";
 import { sendChatMessage, startNewChat } from "./chat.js";
+import { cancelAutonomyRun } from "./autonomy.js";
 
 function isInputFocused() {
   const tag = document.activeElement?.tagName?.toLowerCase();
@@ -32,6 +33,14 @@ export function initShortcuts() {
     if (e.key === "N" && e.ctrlKey && e.shiftKey) {
       e.preventDefault();
       startNewChat();
+    }
+
+    // Ctrl+Shift+X — Kill Switch (cancel active autonomy run)
+    if (e.key === "X" && e.ctrlKey && e.shiftKey) {
+      e.preventDefault();
+      if (appState.activeRunId) {
+        cancelAutonomyRun();
+      }
     }
   });
 }
