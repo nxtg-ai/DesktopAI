@@ -135,7 +135,6 @@ def test_orchestrator_does_not_retry_unsupported_action_errors():
 
 def test_build_action_executor_auto_uses_simulated_off_windows(monkeypatch):
     monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: False)
-    monkeypatch.setattr("app.action_executor.shutil.which", lambda _name: "/usr/bin/pwsh")
 
     executor = build_action_executor(
         mode="auto",
@@ -146,8 +145,8 @@ def test_build_action_executor_auto_uses_simulated_off_windows(monkeypatch):
 
 
 def test_windows_executor_reports_unavailable_off_windows(monkeypatch):
-    monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: False)
-    monkeypatch.setattr("app.action_executor.shutil.which", lambda _name: "/usr/bin/pwsh")
+    monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: False)
+    monkeypatch.setattr("app.action_executor.powershell.shutil.which", lambda _name: "/usr/bin/pwsh")
 
     executor = WindowsPowerShellActionExecutor(powershell_executable="pwsh")
     status = executor.status()
@@ -157,8 +156,9 @@ def test_windows_executor_reports_unavailable_off_windows(monkeypatch):
 
 def test_build_action_executor_auto_uses_windows_on_windows(monkeypatch):
     monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+    monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
     monkeypatch.setattr(
-        "app.action_executor.shutil.which",
+        "app.action_executor.powershell.shutil.which",
         lambda _name: "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
     )
 
@@ -187,8 +187,8 @@ def test_simulated_executor_preflight_is_ok():
 
 def test_windows_executor_preflight_reports_non_windows_host(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: False)
-        monkeypatch.setattr("app.action_executor.shutil.which", lambda _name: "/usr/bin/pwsh")
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: False)
+        monkeypatch.setattr("app.action_executor.powershell.shutil.which", lambda _name: "/usr/bin/pwsh")
 
         executor = WindowsPowerShellActionExecutor(powershell_executable="pwsh")
         report = await executor.preflight()
@@ -201,9 +201,9 @@ def test_windows_executor_preflight_reports_non_windows_host(monkeypatch):
 
 def test_windows_executor_preflight_reports_success_on_windows(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
         )
 
@@ -259,9 +259,9 @@ def test_simulated_executor_accepts_desktop_context():
 
 def test_windows_executor_observe_desktop_returns_context(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/powershell.exe",
         )
         executor = WindowsPowerShellActionExecutor(powershell_executable="powershell.exe")
@@ -283,9 +283,9 @@ def test_windows_executor_observe_desktop_returns_context(monkeypatch):
 
 def test_windows_executor_observe_desktop_without_context_falls_through(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/powershell.exe",
         )
 
@@ -307,9 +307,9 @@ def test_windows_executor_observe_desktop_without_context_falls_through(monkeypa
 
 def test_windows_executor_compose_text_with_ollama(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/powershell.exe",
         )
         mock_ollama = AsyncMock()
@@ -343,9 +343,9 @@ def test_windows_executor_compose_text_with_ollama(monkeypatch):
 
 def test_windows_executor_compose_text_falls_back_without_ollama(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/powershell.exe",
         )
         executor = WindowsPowerShellActionExecutor(powershell_executable="powershell.exe")
@@ -373,9 +373,9 @@ def test_windows_executor_compose_text_falls_back_without_ollama(monkeypatch):
 def test_windows_executor_compose_text_uses_vision_with_screenshot(monkeypatch):
     import base64
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/powershell.exe",
         )
         mock_ollama = AsyncMock()
@@ -406,9 +406,9 @@ def test_windows_executor_compose_text_uses_vision_with_screenshot(monkeypatch):
 
 def test_windows_executor_verify_outcome_detects_change(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/powershell.exe",
         )
         after_event = WindowEvent(
@@ -439,9 +439,9 @@ def test_windows_executor_verify_outcome_detects_change(monkeypatch):
 
 def test_windows_executor_verify_outcome_no_change(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/powershell.exe",
         )
         after_event = WindowEvent(
@@ -471,9 +471,9 @@ def test_windows_executor_verify_outcome_no_change(monkeypatch):
 
 def test_windows_executor_verify_outcome_without_state_store(monkeypatch):
     async def scenario():
-        monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+        monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
         monkeypatch.setattr(
-            "app.action_executor.shutil.which",
+            "app.action_executor.powershell.shutil.which",
             lambda _name: "C:/Windows/System32/powershell.exe",
         )
         executor = WindowsPowerShellActionExecutor(powershell_executable="powershell.exe")
@@ -495,9 +495,9 @@ def test_windows_executor_verify_outcome_without_state_store(monkeypatch):
 
 
 def test_build_action_executor_passes_state_store_and_ollama(monkeypatch):
-    monkeypatch.setattr("app.action_executor._is_windows_platform", lambda: True)
+    monkeypatch.setattr("app.action_executor.powershell._is_windows_platform", lambda: True)
     monkeypatch.setattr(
-        "app.action_executor.shutil.which",
+        "app.action_executor.powershell.shutil.which",
         lambda _name: "C:/Windows/System32/powershell.exe",
     )
     mock_store = object()

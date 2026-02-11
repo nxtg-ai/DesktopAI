@@ -462,6 +462,17 @@ h1 {
   min-height: 400px;
 }
 
+.personality-select {
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink);
+  cursor: pointer;
+}
+
 .chat-container {
   display: flex;
   flex-direction: column;
@@ -867,6 +878,7 @@ h1 {
 
   .voice-text,
   .autonomy-field input,
+  .personality-select,
   .filters input,
   .filters select,
   .journey-controls input,

@@ -108,13 +108,25 @@ class VisionAgent:
         trajectory_context = ""
         if self._trajectory_store:
             try:
-                from .memory import format_trajectory_context
+                from .memory import format_error_lessons, format_trajectory_context
                 similar = await self._trajectory_store.find_similar(
                     objective, limit=self._trajectory_max_results,
                 )
                 trajectory_context = format_trajectory_context(
                     similar, max_chars=self._trajectory_max_chars,
                 )
+                # Append error lessons from failed trajectories
+                lessons = await self._trajectory_store.extract_error_lessons(
+                    objective, limit=5,
+                )
+                if lessons:
+                    lesson_text = format_error_lessons(lessons, max_chars=600)
+                    if lesson_text:
+                        trajectory_context = (
+                            (trajectory_context + "\n\n" + lesson_text)
+                            if trajectory_context
+                            else lesson_text
+                        )
             except Exception as exc:
                 logger.warning("VisionAgent: trajectory lookup failed: %s", exc)
 

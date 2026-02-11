@@ -193,13 +193,20 @@ class OllamaAutonomyPlanner:
         trajectory_text = ""
         if self._trajectory_store:
             try:
-                from .memory import format_trajectory_context
+                from .memory import format_error_lessons, format_trajectory_context
                 similar = await self._trajectory_store.find_similar(
                     objective, limit=self._trajectory_max_results,
                 )
                 raw = format_trajectory_context(similar, max_chars=self._trajectory_max_chars)
                 if raw:
                     trajectory_text = f"\n\nPast Experience (similar tasks attempted before):\n{raw}\n"
+                lessons = await self._trajectory_store.extract_error_lessons(
+                    objective, limit=5,
+                )
+                if lessons:
+                    lesson_text = format_error_lessons(lessons, max_chars=600)
+                    if lesson_text:
+                        trajectory_text += f"\n\n{lesson_text}\n"
             except Exception as exc:
                 logger.debug("Trajectory lookup failed: %s", exc)
 

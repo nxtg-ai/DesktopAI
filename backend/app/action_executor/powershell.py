@@ -1,115 +1,22 @@
-"""Action executors: simulated, Windows PowerShell, and command bridge backends."""
+"""Windows PowerShell action executor."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import os
 import shutil
 import subprocess
-import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from .schemas import TaskAction
-
-logger = logging.getLogger(__name__)
-
-# TYPE_CHECKING avoids circular import at runtime
-from typing import TYPE_CHECKING
+from ..schemas import TaskAction
+from .base import ActionExecutionResult, TaskActionExecutor, _detect_changes, _is_windows_platform
 
 if TYPE_CHECKING:
-    from .desktop_context import DesktopContext
+    from ..desktop_context import DesktopContext
 
-
-def _is_windows_platform() -> bool:
-    return os.name == "nt" or sys.platform.startswith("win")
-
-
-@dataclass(frozen=True)
-class ActionExecutionResult:
-    ok: bool
-    result: Dict[str, Any]
-    error: Optional[str] = None
-
-
-class TaskActionExecutor:
-    mode: str = "simulated"
-
-    async def execute(
-        self,
-        action: TaskAction,
-        *,
-        objective: str,
-        desktop_context: Optional[DesktopContext] = None,
-    ) -> ActionExecutionResult:
-        raise NotImplementedError
-
-    def status(self) -> Dict[str, Any]:
-        raise NotImplementedError
-
-    async def preflight(self) -> Dict[str, Any]:
-        status = self.status()
-        available = bool(status.get("available", False))
-        mode = str(status.get("mode", self.mode))
-        ok = available or mode == "simulated"
-        return {
-            "mode": mode,
-            "ok": ok,
-            "checks": [
-                {
-                    "name": "executor_available",
-                    "ok": ok,
-                    "detail": status.get("message", ""),
-                }
-            ],
-            "message": status.get("message", ""),
-        }
-
-
-class SimulatedTaskActionExecutor(TaskActionExecutor):
-    mode = "simulated"
-
-    async def execute(
-        self,
-        action: TaskAction,
-        *,
-        objective: str,
-        desktop_context: Optional[DesktopContext] = None,
-    ) -> ActionExecutionResult:
-        return ActionExecutionResult(
-            ok=True,
-            result={
-                "executor": "backend-simulated",
-                "mode": self.mode,
-                "action": action.action,
-                "objective": objective,
-                "ok": True,
-            },
-        )
-
-    def status(self) -> Dict[str, Any]:
-        return {
-            "mode": self.mode,
-            "available": True,
-            "message": "Simulated deterministic executor active.",
-        }
-
-    async def preflight(self) -> Dict[str, Any]:
-        return {
-            "mode": self.mode,
-            "ok": True,
-            "checks": [
-                {
-                    "name": "simulated_mode",
-                    "ok": True,
-                    "detail": "Deterministic simulated executor active.",
-                }
-            ],
-            "message": "Simulated executor ready.",
-        }
+logger = logging.getLogger(__name__)
 
 
 class WindowsPowerShellActionExecutor(TaskActionExecutor):
@@ -261,7 +168,7 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
             if desktop_context and self._state_store:
                 after_event = await self._state_store.current()
                 if after_event:
-                    from .desktop_context import DesktopContext as DC
+                    from ..desktop_context import DesktopContext as DC
                     after_ctx = DC.from_event(after_event)
                     if after_ctx:
                         changes = _detect_changes(desktop_context, after_ctx)
@@ -271,7 +178,6 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
             script = "$ErrorActionPreference='Stop'; Start-Sleep -Milliseconds 200; Write-Output 'verified'"
             return await self._run_powershell(script)
 
-        # _validate_command_input already rejects unknown actions above
         raise RuntimeError(f"unhandled action: {name}")
 
     async def _generate_compose_text(self, objective: str, desktop_context) -> Optional[str]:
@@ -474,242 +380,3 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
             "checks": checks,
             "message": "Windows preflight passed." if ok else "Windows preflight failed.",
         }
-
-
-class BridgeActionExecutor(TaskActionExecutor):
-    """Executor that sends commands to the Windows collector via CommandBridge."""
-
-    mode = "bridge"
-
-    def __init__(
-        self,
-        bridge,
-        timeout_s: int = 10,
-        ollama=None,
-    ) -> None:
-        self._bridge = bridge
-        self._timeout_s = max(1, int(timeout_s))
-        self._ollama = ollama
-
-    async def execute(
-        self,
-        action: TaskAction,
-        *,
-        objective: str,
-        desktop_context: Optional[DesktopContext] = None,
-    ) -> ActionExecutionResult:
-        if not self._bridge.connected:
-            return ActionExecutionResult(
-                ok=False,
-                error="bridge not connected to collector",
-                result={"executor": self.mode, "action": action.action, "ok": False},
-            )
-
-        name = (action.action or "").strip()
-        params = dict(action.parameters or {})
-
-        try:
-            if name == "observe_desktop":
-                result = await self._bridge.execute("observe", timeout_s=self._timeout_s)
-            elif name == "open_application":
-                result = await self._bridge.execute(
-                    "open_application",
-                    {"application": params.get("application", "")},
-                    timeout_s=self._timeout_s,
-                )
-            elif name == "click":
-                result = await self._bridge.execute("click", params, timeout_s=self._timeout_s)
-            elif name == "type_text":
-                result = await self._bridge.execute("type_text", params, timeout_s=self._timeout_s)
-            elif name == "send_keys" or name == "focus_search" or name == "send_or_submit":
-                keys = params.get("keys", "")
-                result = await self._bridge.execute("send_keys", {"keys": keys}, timeout_s=self._timeout_s)
-            elif name == "compose_text":
-                text = params.get("text", "")
-                if not text and self._ollama and desktop_context:
-                    text = await self._generate_compose_text(objective, desktop_context)
-                if text:
-                    result = await self._bridge.execute(
-                        "type_text", {"text": text}, timeout_s=self._timeout_s,
-                    )
-                else:
-                    result = {"ok": False, "error": "no text to compose"}
-            elif name == "focus_window":
-                result = await self._bridge.execute("focus_window", params, timeout_s=self._timeout_s)
-            elif name == "verify_outcome":
-                result = await self._bridge.execute("observe", timeout_s=self._timeout_s)
-            else:
-                result = await self._bridge.execute(name, params, timeout_s=self._timeout_s)
-        except Exception as exc:
-            return ActionExecutionResult(
-                ok=False,
-                error=str(exc),
-                result={"executor": self.mode, "action": name, "ok": False},
-            )
-
-        ok = bool(result.get("ok", False))
-        return ActionExecutionResult(
-            ok=ok,
-            result={
-                "executor": self.mode,
-                "action": name,
-                "ok": ok,
-                "bridge_result": result.get("result"),
-                "screenshot_available": result.get("screenshot_b64") is not None,
-            },
-            error=result.get("error"),
-        )
-
-    async def _generate_compose_text(self, objective: str, desktop_context) -> str:
-        try:
-            prompt = (
-                f"Draft a concise response for the following objective.\n\n"
-                f"Objective: {objective}\n\n"
-                f"Desktop Context:\n{desktop_context.to_llm_prompt()}\n\n"
-                f"Write only the text to type. No explanation."
-            )
-            messages = [{"role": "user", "content": prompt}]
-            screenshot_bytes = desktop_context.get_screenshot_bytes()
-            if screenshot_bytes and hasattr(self._ollama, "chat_with_images"):
-                result = await self._ollama.chat_with_images(messages, [screenshot_bytes])
-            elif hasattr(self._ollama, "chat"):
-                result = await self._ollama.chat(messages)
-            else:
-                result = await self._ollama.generate(prompt)
-            if result and result.strip():
-                return result.strip()
-        except Exception as exc:
-            logger.warning("BridgeExecutor compose_text LLM failed: %s", exc)
-        return ""
-
-    def status(self) -> Dict[str, Any]:
-        return {
-            "mode": self.mode,
-            "available": self._bridge.connected,
-            "bridge_connected": self._bridge.connected,
-            "timeout_s": self._timeout_s,
-            "message": "Bridge executor connected." if self._bridge.connected else "Bridge executor: collector not connected.",
-        }
-
-
-def _detect_changes(before, after) -> Optional[str]:
-    parts = []
-    if before.window_title != after.window_title:
-        parts.append(f"window changed to {after.window_title!r}")
-    if before.uia_summary != after.uia_summary:
-        parts.append("UI state changed")
-    if not parts:
-        return None
-    return "; ".join(parts)
-
-
-def build_action_executor(
-    mode: str,
-    powershell_executable: str,
-    timeout_s: int,
-    default_compose_text: str = "Draft generated by DesktopAI.",
-    cdp_endpoint: str = "http://localhost:9222",
-    state_store=None,
-    ollama=None,
-    bridge=None,
-) -> TaskActionExecutor:
-    normalized = (mode or "").strip().lower()
-    if normalized in {"sim", "simulate", "simulated"}:
-        return SimulatedTaskActionExecutor()
-
-    if normalized in {"windows", "windows-powershell", "powershell"}:
-        return WindowsPowerShellActionExecutor(
-            powershell_executable=powershell_executable,
-            timeout_s=timeout_s,
-            default_compose_text=default_compose_text,
-            state_store=state_store,
-            ollama=ollama,
-        )
-
-    if normalized in {"bridge", "windows-bridge"}:
-        if bridge is None:
-            raise ValueError("Bridge executor mode requested but no bridge provided")
-        return BridgeActionExecutor(
-            bridge=bridge,
-            timeout_s=timeout_s,
-            ollama=ollama,
-        )
-
-    if normalized in {"playwright", "browser", "playwright-cdp"}:
-        try:
-            from .playwright_executor import PlaywrightExecutor
-            return PlaywrightExecutor(cdp_endpoint=cdp_endpoint)
-        except ImportError as exc:
-            raise ValueError(
-                f"Playwright executor mode requested but playwright not installed: {exc}"
-            ) from exc
-
-    if normalized in {"auto", ""}:
-        # 1. Prefer bridge when collector is connected (works cross-platform)
-        if bridge is not None and getattr(bridge, "connected", False):
-            return BridgeActionExecutor(
-                bridge=bridge, timeout_s=timeout_s, ollama=ollama,
-            )
-        # 2. On Windows, try PowerShell
-        if _is_windows_platform():
-            windows = WindowsPowerShellActionExecutor(
-                powershell_executable=powershell_executable,
-                timeout_s=timeout_s,
-                default_compose_text=default_compose_text,
-                state_store=state_store,
-                ollama=ollama,
-            )
-            if windows.status().get("available"):
-                return windows
-        # 3. Fallback
-        return SimulatedTaskActionExecutor()
-
-    raise ValueError(f"unsupported ACTION_EXECUTOR_MODE: {mode}")
-
-
-def build_action_executors(
-    mode: str,
-    powershell_executable: str,
-    timeout_s: int,
-    default_compose_text: str = "Draft generated by DesktopAI.",
-    cdp_endpoint: str = "http://localhost:9222",
-    state_store=None,
-    ollama=None,
-    bridge=None,
-) -> dict[str, TaskActionExecutor]:
-    """Build all available action executors.
-
-    Args:
-        mode: Primary executor mode
-        powershell_executable: Path to PowerShell executable
-        timeout_s: Execution timeout in seconds
-        default_compose_text: Default text for compose actions
-        cdp_endpoint: Chrome DevTools Protocol endpoint for Playwright
-        state_store: Optional StateStore for desktop context
-        ollama: Optional OllamaClient for LLM-powered actions
-
-    Returns:
-        Dict mapping executor names to executor instances
-    """
-    executors: dict[str, TaskActionExecutor] = {}
-
-    # Build primary executor
-    executors["primary"] = build_action_executor(
-        mode=mode,
-        powershell_executable=powershell_executable,
-        timeout_s=timeout_s,
-        default_compose_text=default_compose_text,
-        cdp_endpoint=cdp_endpoint,
-        state_store=state_store,
-        ollama=ollama,
-        bridge=bridge,
-    )
-
-    # Try to add browser executor
-    try:
-        from .playwright_executor import PlaywrightExecutor
-        executors["browser"] = PlaywrightExecutor(cdp_endpoint=cdp_endpoint)
-    except ImportError:
-        pass
-
-    return executors

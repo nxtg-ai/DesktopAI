@@ -31,6 +31,24 @@ _ACTION_KEYWORDS = {
     "close", "switch",
 }
 
+_PERSONALITY_PROMPTS = {
+    "copilot": (
+        "You are DesktopAI in co-pilot mode. Be concise and technical. "
+        "Use jargon freely. Focus on code, workflows, and productivity. "
+        "Skip pleasantries — the user is in flow state."
+    ),
+    "assistant": (
+        "You are DesktopAI, an intelligent desktop assistant. "
+        "Be friendly and explanatory. Offer proactive suggestions. "
+        "Respond concisely and helpfully."
+    ),
+    "operator": (
+        "You are DesktopAI in operator mode. Be minimal and action-focused. "
+        "Treat every message as a potential command. Execute first, explain only if asked. "
+        "No small talk."
+    ),
+}
+
 
 def _is_action_intent(message: str) -> bool:
     words = set(message.lower().split())
@@ -179,13 +197,14 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     # Fetch session summary for enriched context
     session = await store.session_summary()
 
+    mode = request.personality_mode or settings.personality_mode
+
     is_available = await llm.available()
     if is_available:
         # Build multi-turn messages array
         llm_messages = []
         system_parts = [
-            "You are DesktopAI, an intelligent desktop assistant. "
-            "Respond concisely and helpfully.",
+            _PERSONALITY_PROMPTS.get(mode, _PERSONALITY_PROMPTS["assistant"]),
         ]
         if ctx:
             system_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
@@ -227,6 +246,7 @@ async def chat_endpoint(request: ChatRequest) -> dict:
                 "action_triggered": action_triggered,
                 "run_id": run_id,
                 "conversation_id": conversation_id,
+                "personality_mode": mode,
             }
 
     if action_triggered:
@@ -245,4 +265,5 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         "action_triggered": action_triggered,
         "run_id": run_id,
         "conversation_id": conversation_id,
+        "personality_mode": mode,
     }

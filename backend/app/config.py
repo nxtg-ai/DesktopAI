@@ -71,6 +71,7 @@ class Settings:
     openai_base_url: str = _env("OPENAI_BASE_URL", "https://api.openai.com/v1")
     openai_model: str = _env("OPENAI_MODEL", "gpt-4o")
     autonomy_planner_mode: str = _autonomy_planner_mode()
+    personality_mode: str = _env("PERSONALITY_MODE", "assistant")
     classifier_default: str = _env("CLASSIFIER_DEFAULT", "docs")
     classifier_use_ollama: bool = _env_bool("CLASSIFIER_USE_OLLAMA", False)
     action_executor_mode: str = _env("ACTION_EXECUTOR_MODE", "auto")

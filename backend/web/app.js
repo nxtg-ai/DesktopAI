@@ -11,7 +11,7 @@ import {
   voiceTextEl, voiceTranscriptEl, speakBtn, micBtn,
   autonomyStartBtn, autonomyApproveBtn, autonomyCancelBtn,
   readinessGateBtn, readinessMatrixBtn,
-  chatSendBtn, chatInputEl, chatSuggestionBtns,
+  chatSendBtn, chatInputEl, chatSuggestionBtns, personalityModeEl,
   visionRefreshBtn,
   journeySessionEl, journeyRefreshBtn,
   runtimeLogsRefreshBtn, runtimeLogsCorrelateBtn, runtimeLogsClearBtn,
@@ -213,6 +213,19 @@ try {
     if (icon) icon.textContent = "\u2600";
   }
 } catch {}
+
+// Personality mode persistence
+if (personalityModeEl) {
+  try {
+    const savedMode = localStorage.getItem("desktopai-personality");
+    if (savedMode && personalityModeEl.querySelector(`option[value="${savedMode}"]`)) {
+      personalityModeEl.value = savedMode;
+    }
+  } catch {}
+  personalityModeEl.addEventListener("change", () => {
+    try { localStorage.setItem("desktopai-personality", personalityModeEl.value); } catch {}
+  });
+}
 
 // ── Boot ──
 

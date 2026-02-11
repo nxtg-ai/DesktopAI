@@ -91,6 +91,7 @@ TaskStatus = Literal[
 TaskStepStatus = Literal["pending", "running", "succeeded", "failed", "blocked", "skipped"]
 AutonomyRunStatus = Literal["running", "waiting_approval", "completed", "failed", "cancelled"]
 AutonomyLevel = Literal["supervised", "guided", "autonomous"]
+PersonalityMode = Literal["copilot", "assistant", "operator"]
 
 
 class TaskAction(BaseModel):
@@ -224,3 +225,4 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     allow_actions: bool = True
     conversation_id: Optional[str] = None
+    personality_mode: Optional[PersonalityMode] = None

@@ -2,7 +2,7 @@
 
 import {
   appState, chatStatusEl, chatContextIndicatorEl, chatMessagesEl, chatWelcomeEl,
-  chatInputEl, chatSendBtn, formatTime,
+  chatInputEl, chatSendBtn, personalityModeEl, formatTime,
 } from "./state.js";
 import { queueTelemetry } from "./telemetry.js";
 
@@ -108,7 +108,8 @@ export async function sendChatMessage(text) {
   showChatTyping();
   queueTelemetry("chat_sent", "chat message sent", { chars: message.length });
   try {
-    const payload = { message, allow_actions: true };
+    const personality = (personalityModeEl && personalityModeEl.value) || "assistant";
+    const payload = { message, allow_actions: true, personality_mode: personality };
     if (appState.conversationId) payload.conversation_id = appState.conversationId;
     const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await resp.json();

@@ -20,6 +20,17 @@ _OUTCOME_LABELS = {
 }
 
 
+@dataclass
+class ErrorLesson:
+    """A learned lesson from a failed trajectory step."""
+
+    objective: str
+    action: str
+    error: str
+    reasoning: str
+    trajectory_id: str
+
+
 def format_trajectory_context(
     trajectories: List[Trajectory],
     max_chars: int = 1500,
@@ -56,6 +67,30 @@ def format_trajectory_context(
         parts.append(entry)
 
     result = "\n\n".join(parts)
+    if len(result) > max_chars:
+        result = result[: max_chars - 3] + "..."
+    return result
+
+
+def format_error_lessons(
+    lessons: List[ErrorLesson],
+    max_chars: int = 800,
+) -> str:
+    """Format error lessons into a prompt-injectable 'avoid these mistakes' section."""
+    if not lessons:
+        return ""
+
+    parts: List[str] = []
+    for lesson in lessons:
+        line = (
+            f"- When trying to \"{lesson.objective[:60]}\", "
+            f"action '{lesson.action}' failed: {lesson.error[:80]}"
+        )
+        if lesson.reasoning:
+            line += f" (was attempting: {lesson.reasoning[:60]})"
+        parts.append(line)
+
+    result = "LESSONS FROM PAST FAILURES (avoid repeating these mistakes):\n" + "\n".join(parts)
     if len(result) > max_chars:
         result = result[: max_chars - 3] + "..."
     return result
@@ -262,6 +297,73 @@ class TrajectoryStore:
         if row is None:
             return None
         return self._row_to_trajectory(row)
+
+    async def extract_error_lessons(
+        self, objective: str, limit: int = 5
+    ) -> List[ErrorLesson]:
+        """Extract error patterns from failed trajectories similar to the given objective."""
+        return await asyncio.to_thread(self._extract_error_lessons, objective, limit)
+
+    def _extract_error_lessons(self, objective: str, limit: int) -> List[ErrorLesson]:
+        if limit <= 0:
+            return []
+
+        with self._lock:
+            cur = self._conn.cursor()
+            # First try FTS match, fall back to recent failures
+            try:
+                rows = cur.execute(
+                    """
+                    SELECT t.trajectory_id, t.objective, t.steps_json
+                    FROM trajectories_fts fts
+                    JOIN trajectories t ON t.rowid = fts.rowid
+                    WHERE trajectories_fts MATCH ? AND t.outcome = 'failed'
+                    ORDER BY rank
+                    LIMIT ?
+                    """,
+                    (objective, limit),
+                ).fetchall()
+            except Exception:
+                rows = []
+
+            if not rows:
+                rows = cur.execute(
+                    """
+                    SELECT trajectory_id, objective, steps_json
+                    FROM trajectories
+                    WHERE outcome = 'failed'
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+
+        lessons: List[ErrorLesson] = []
+        for row in rows:
+            try:
+                steps_data = json.loads(row["steps_json"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            for step in steps_data:
+                error = step.get("error")
+                if not error:
+                    result_ok = step.get("result_ok", True)
+                    if result_ok:
+                        continue
+                    error = "action reported failure"
+
+                lessons.append(
+                    ErrorLesson(
+                        objective=row["objective"],
+                        action=step.get("action", "unknown"),
+                        error=str(error),
+                        reasoning=str(step.get("reasoning", "")),
+                        trajectory_id=row["trajectory_id"],
+                    )
+                )
+
+        return lessons[:limit]
 
     def _apply_retention(self, cur: sqlite3.Cursor) -> None:
         if self._max_trajectories <= 0:

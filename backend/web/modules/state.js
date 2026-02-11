@@ -77,6 +77,7 @@ export const runtimeLogsLevelEl = document.getElementById("runtime-logs-level");
 export const runtimeLogsClearBtn = document.getElementById("runtime-logs-clear-btn");
 export const runtimeLogsCorrelateBtn = document.getElementById("runtime-logs-correlate-btn");
 export const collectorStatusEl = document.getElementById("collector-status");
+export const personalityModeEl = document.getElementById("personality-mode");
 export const chatStatusEl = document.getElementById("chat-status");
 export const chatContextIndicatorEl = document.getElementById("chat-context-indicator");
 export const chatMessagesEl = document.getElementById("chat-messages");
