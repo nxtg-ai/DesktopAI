@@ -119,8 +119,18 @@ fn handle_incoming_message(
         }
     };
 
-    // Check if this is a command (has "type": "command" field)
+    // Check message type
     let msg_type = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+    // Respond to heartbeat pings
+    if msg_type == "ping" {
+        let pong = r#"{"type":"pong"}"#;
+        if let Err(err) = socket.send(Message::Text(pong.to_string())) {
+            log::warn!("Failed to send pong: {err}");
+        }
+        return;
+    }
+
     if msg_type != "command" {
         // Not a command — might be an ack or other message, ignore
         return;
@@ -209,6 +219,21 @@ mod tests {
         // Simulate successful connection → reset
         backoff_ms = 1000;
         assert_eq!(backoff_ms, 1000);
+    }
+
+    #[test]
+    fn test_ping_message_detected() {
+        let ping = r#"{"type":"ping"}"#;
+        let value: serde_json::Value = serde_json::from_str(ping).unwrap();
+        let msg_type = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(msg_type, "ping");
+    }
+
+    #[test]
+    fn test_pong_response_format() {
+        let pong = r#"{"type":"pong"}"#;
+        let value: serde_json::Value = serde_json::from_str(pong).unwrap();
+        assert_eq!(value.get("type").and_then(|v| v.as_str()), Some("pong"));
     }
 
     #[test]

@@ -16,6 +16,7 @@ class CollectorStatus:
     ws_connected: bool = False
     ws_connected_at: Optional[datetime] = None
     ws_disconnected_at: Optional[datetime] = None
+    last_heartbeat_at: Optional[datetime] = None
     total_events: int = 0
     uia_events: int = 0
 
@@ -34,6 +35,11 @@ class CollectorStatusStore:
         async with self._lock:
             self._s.ws_connected = False
             self._s.ws_disconnected_at = now
+            self._s.last_heartbeat_at = None
+
+    async def note_heartbeat(self, now: datetime) -> None:
+        async with self._lock:
+            self._s.last_heartbeat_at = now
 
     async def note_event(self, now: datetime, *, transport: str, source: str, has_uia: bool) -> None:
         async with self._lock:
@@ -51,6 +57,7 @@ class CollectorStatusStore:
                 "ws_connected": s.ws_connected,
                 "ws_connected_at": s.ws_connected_at.isoformat() if s.ws_connected_at else None,
                 "ws_disconnected_at": s.ws_disconnected_at.isoformat() if s.ws_disconnected_at else None,
+                "last_heartbeat_at": s.last_heartbeat_at.isoformat() if s.last_heartbeat_at else None,
                 "last_event_at": s.last_event_at.isoformat() if s.last_event_at else None,
                 "last_transport": s.last_transport,
                 "last_source": s.last_source,

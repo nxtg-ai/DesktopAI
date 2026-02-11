@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 from app.notification_engine import (
     AppSwitchRule,
+    ContextInsightRule,
     IdleRule,
     NotificationEngine,
     SessionMilestoneRule,
@@ -89,3 +90,93 @@ async def test_disabled_notifications():
 
     hub.broadcast_json.assert_not_called()
     assert await store.unread_count() == 0
+
+
+# --- ContextInsightRule tests ---
+
+
+def test_context_insight_short_name_windows():
+    rule = ContextInsightRule()
+    assert rule._short_name("C:\\Windows\\System32\\notepad.exe") == "notepad"
+
+
+def test_context_insight_short_name_unix():
+    rule = ContextInsightRule()
+    assert rule._short_name("/usr/bin/firefox") == "firefox"
+
+
+def test_context_insight_short_name_bare():
+    rule = ContextInsightRule()
+    assert rule._short_name("chrome.exe") == "chrome"
+
+
+def test_context_insight_toggle_triggers():
+    """Toggling between two apps enough times triggers an insight."""
+    rule = ContextInsightRule(toggle_window_s=300, toggle_min_switches=4)
+    result = None
+    # Simulate A→B→A→B→A→B (6 transitions between pair)
+    apps = ["outlook.exe", "excel.exe"] * 4
+    for app in apps:
+        snap = StateSnapshot(process_exe=app, event_count=1)
+        r = rule.check(snap)
+        if r is not None:
+            result = r
+    assert result is not None
+    assert result["rule"] == "context_insight_toggle"
+    assert "outlook" in result["message"].lower() or "excel" in result["message"].lower()
+
+
+def test_context_insight_toggle_not_enough_switches():
+    """Too few switches should not trigger."""
+    rule = ContextInsightRule(toggle_window_s=300, toggle_min_switches=10)
+    result = None
+    for app in ["a.exe", "b.exe", "a.exe"]:
+        snap = StateSnapshot(process_exe=app, event_count=1)
+        r = rule.check(snap)
+        if r is not None:
+            result = r
+    assert result is None
+
+
+def test_context_insight_dwell_triggers():
+    """Staying in one app long enough triggers a dwell insight."""
+    rule = ContextInsightRule(dwell_threshold_s=60)
+    snap = StateSnapshot(process_exe="word.exe", event_count=1)
+    # First call sets dwell start
+    rule.check(snap)
+    # Simulate time passing
+    rule._dwell_start = time.time() - 120
+    result = rule.check(snap)
+    assert result is not None
+    assert result["rule"] == "context_insight_dwell"
+    assert "word" in result["message"].lower()
+
+
+def test_context_insight_dwell_not_long_enough():
+    """Short dwell should not trigger."""
+    rule = ContextInsightRule(dwell_threshold_s=1800)
+    snap = StateSnapshot(process_exe="word.exe", event_count=1)
+    rule.check(snap)
+    # Only 10 seconds — not enough
+    result = rule.check(snap)
+    assert result is None
+
+
+def test_context_insight_dwell_no_repeat_notification():
+    """Dwell notification should not fire twice for the same app."""
+    rule = ContextInsightRule(dwell_threshold_s=60)
+    snap = StateSnapshot(process_exe="word.exe", event_count=1)
+    rule.check(snap)
+    rule._dwell_start = time.time() - 120
+    first = rule.check(snap)
+    assert first is not None
+    second = rule.check(snap)
+    assert second is None
+
+
+def test_context_insight_empty_process():
+    """Empty process_exe should not trigger."""
+    rule = ContextInsightRule()
+    snap = StateSnapshot(process_exe="", event_count=1)
+    result = rule.check(snap)
+    assert result is None

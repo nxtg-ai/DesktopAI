@@ -116,12 +116,14 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     current_event = await store.current()
     ctx = DesktopContext.from_event(current_event) if current_event else None
     ctx_dict = None
+    screenshot_b64 = None
     if ctx:
+        screenshot_b64 = ctx.screenshot_b64
         ctx_dict = {
             "window_title": ctx.window_title,
             "process_exe": ctx.process_exe,
             "uia_summary": ctx.uia_summary[:500] if ctx.uia_summary else "",
-            "screenshot_available": ctx.screenshot_b64 is not None,
+            "screenshot_available": screenshot_b64 is not None,
         }
 
     message = request.message.strip()
@@ -239,7 +241,7 @@ async def chat_endpoint(request: ChatRequest) -> dict:
             await chat_memory.save_message(
                 conversation_id, "assistant", response_text
             )
-            return {
+            result = {
                 "response": response_text,
                 "source": "ollama",
                 "desktop_context": ctx_dict,
@@ -248,6 +250,9 @@ async def chat_endpoint(request: ChatRequest) -> dict:
                 "conversation_id": conversation_id,
                 "personality_mode": mode,
             }
+            if screenshot_b64:
+                result["screenshot_b64"] = screenshot_b64
+            return result
 
     if action_triggered:
         response = f"Got it — I've started working on: **{message}**."
@@ -258,7 +263,7 @@ async def chat_endpoint(request: ChatRequest) -> dict:
 
     await chat_memory.save_message(conversation_id, "assistant", response)
 
-    return {
+    result = {
         "response": response,
         "source": "context",
         "desktop_context": ctx_dict,
@@ -267,3 +272,6 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         "conversation_id": conversation_id,
         "personality_mode": mode,
     }
+    if screenshot_b64:
+        result["screenshot_b64"] = screenshot_b64
+    return result

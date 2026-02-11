@@ -74,6 +74,15 @@ class BridgeActionExecutor(TaskActionExecutor):
                     result = {"ok": False, "error": "no text to compose"}
             elif name == "focus_window":
                 result = await self._bridge.execute("focus_window", params, timeout_s=self._timeout_s)
+            elif name == "scroll":
+                result = await self._bridge.execute("scroll", {
+                    "direction": params.get("direction", "down"),
+                    "amount": params.get("amount", 3),
+                }, timeout_s=self._timeout_s)
+            elif name == "double_click":
+                result = await self._bridge.execute("double_click", params, timeout_s=self._timeout_s)
+            elif name == "right_click":
+                result = await self._bridge.execute("right_click", params, timeout_s=self._timeout_s)
             elif name == "verify_outcome":
                 result = await self._bridge.execute("observe", timeout_s=self._timeout_s)
             else:

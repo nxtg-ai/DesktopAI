@@ -68,6 +68,9 @@ pub fn execute_command(cmd: &Command, _config: &Config) -> CommandResult {
         "send_keys" => handle_send_keys(cmd, _config),
         "open_application" => handle_open_application(cmd, _config),
         "focus_window" => handle_focus_window(cmd, _config),
+        "scroll" => handle_scroll(cmd, _config),
+        "double_click" => handle_double_click(cmd, _config),
+        "right_click" => handle_right_click(cmd, _config),
         _ => CommandResult::failure(&cmd.command_id, &format!("unknown action: {}", cmd.action)),
     }
 }
@@ -675,6 +678,193 @@ fn handle_focus_window(cmd: &Command, _config: &Config) -> CommandResult {
     CommandResult::failure(&cmd.command_id, "focus_window requires Windows")
 }
 
+#[cfg(windows)]
+fn handle_scroll(cmd: &Command, config: &Config) -> CommandResult {
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+    let direction = cmd.parameters.get("direction").and_then(|v| v.as_str()).unwrap_or("down");
+    let amount = cmd.parameters.get("amount").and_then(|v| v.as_i64()).unwrap_or(3) as i32;
+
+    // WHEEL_DELTA is 120 per "click"; positive = up, negative = down
+    let wheel_delta = match direction {
+        "up" => 120 * amount,
+        "down" => -120 * amount,
+        _ => return CommandResult::failure(&cmd.command_id, &format!("unknown scroll direction: {direction}")),
+    };
+
+    let input = INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                dx: 0,
+                dy: 0,
+                mouseData: wheel_delta as u32,
+                dwFlags: MOUSEEVENTF_WHEEL,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32); }
+
+    let mut result = HashMap::new();
+    result.insert("direction".to_string(), serde_json::Value::String(direction.to_string()));
+    result.insert("amount".to_string(), serde_json::json!(amount));
+    let mut cmd_result = CommandResult::success(&cmd.command_id, result);
+    cmd_result.screenshot_b64 = if config.enable_screenshot {
+        crate::screenshot::capture_screenshot(config)
+    } else {
+        None
+    };
+    cmd_result
+}
+
+#[cfg(not(windows))]
+fn handle_scroll(cmd: &Command, _config: &Config) -> CommandResult {
+    CommandResult::failure(&cmd.command_id, "scroll requires Windows")
+}
+
+#[cfg(windows)]
+fn handle_double_click(cmd: &Command, config: &Config) -> CommandResult {
+    let x = cmd.parameters.get("x").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+    let y = cmd.parameters.get("y").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+
+    if x < 0 || y < 0 {
+        return CommandResult::failure(&cmd.command_id, "double_click requires 'x' and 'y' parameters");
+    }
+
+    // Move + double left-click using SendInput
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+    let screen_w = unsafe { windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CXSCREEN) };
+    let screen_h = unsafe { windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN) };
+
+    let norm_x = (x as i64 * 65535 / screen_w as i64) as i32;
+    let norm_y = (y as i64 * 65535 / screen_h as i64) as i32;
+
+    let inputs = [
+        // First click
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: norm_x, dy: norm_y, mouseData: 0,
+                    dwFlags: MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN,
+                    time: 0, dwExtraInfo: 0,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: norm_x, dy: norm_y, mouseData: 0,
+                    dwFlags: MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTUP,
+                    time: 0, dwExtraInfo: 0,
+                },
+            },
+        },
+        // Second click
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: norm_x, dy: norm_y, mouseData: 0,
+                    dwFlags: MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN,
+                    time: 0, dwExtraInfo: 0,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: norm_x, dy: norm_y, mouseData: 0,
+                    dwFlags: MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTUP,
+                    time: 0, dwExtraInfo: 0,
+                },
+            },
+        },
+    ];
+
+    unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32); }
+
+    let mut result = HashMap::new();
+    result.insert("x".to_string(), serde_json::json!(x));
+    result.insert("y".to_string(), serde_json::json!(y));
+    let mut cmd_result = CommandResult::success(&cmd.command_id, result);
+    cmd_result.screenshot_b64 = if config.enable_screenshot {
+        crate::screenshot::capture_screenshot(config)
+    } else {
+        None
+    };
+    cmd_result
+}
+
+#[cfg(not(windows))]
+fn handle_double_click(cmd: &Command, _config: &Config) -> CommandResult {
+    CommandResult::failure(&cmd.command_id, "double_click requires Windows")
+}
+
+#[cfg(windows)]
+fn handle_right_click(cmd: &Command, config: &Config) -> CommandResult {
+    let x = cmd.parameters.get("x").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+    let y = cmd.parameters.get("y").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+
+    if x < 0 || y < 0 {
+        return CommandResult::failure(&cmd.command_id, "right_click requires 'x' and 'y' parameters");
+    }
+
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+    let screen_w = unsafe { windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CXSCREEN) };
+    let screen_h = unsafe { windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN) };
+
+    let norm_x = (x as i64 * 65535 / screen_w as i64) as i32;
+    let norm_y = (y as i64 * 65535 / screen_h as i64) as i32;
+
+    let inputs = [
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: norm_x, dy: norm_y, mouseData: 0,
+                    dwFlags: MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_RIGHTDOWN,
+                    time: 0, dwExtraInfo: 0,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: norm_x, dy: norm_y, mouseData: 0,
+                    dwFlags: MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_RIGHTUP,
+                    time: 0, dwExtraInfo: 0,
+                },
+            },
+        },
+    ];
+
+    unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32); }
+
+    let mut result = HashMap::new();
+    result.insert("x".to_string(), serde_json::json!(x));
+    result.insert("y".to_string(), serde_json::json!(y));
+    let mut cmd_result = CommandResult::success(&cmd.command_id, result);
+    cmd_result.screenshot_b64 = if config.enable_screenshot {
+        crate::screenshot::capture_screenshot(config)
+    } else {
+        None
+    };
+    cmd_result
+}
+
+#[cfg(not(windows))]
+fn handle_right_click(cmd: &Command, _config: &Config) -> CommandResult {
+    CommandResult::failure(&cmd.command_id, "right_click requires Windows")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -758,5 +948,49 @@ mod tests {
         assert_eq!(cmd.action, "observe");
         assert!(cmd.parameters.is_empty());
         assert_eq!(cmd.timeout_ms, 5000);
+    }
+
+    #[test]
+    fn test_scroll_command_parse() {
+        let json = r#"{"command_id": "s1", "action": "scroll", "parameters": {"direction": "up", "amount": 5}}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert_eq!(cmd.action, "scroll");
+        assert_eq!(cmd.parameters["direction"], "up");
+        assert_eq!(cmd.parameters["amount"], 5);
+    }
+
+    #[test]
+    fn test_double_click_command_parse() {
+        let json = r#"{"command_id": "dc1", "action": "double_click", "parameters": {"x": 100, "y": 200}}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert_eq!(cmd.action, "double_click");
+        assert_eq!(cmd.parameters["x"], 100);
+        assert_eq!(cmd.parameters["y"], 200);
+    }
+
+    #[test]
+    fn test_right_click_command_parse() {
+        let json = r#"{"command_id": "rc1", "action": "right_click", "parameters": {"x": 50, "y": 75}}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert_eq!(cmd.action, "right_click");
+        assert_eq!(cmd.parameters["x"], 50);
+        assert_eq!(cmd.parameters["y"], 75);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_new_commands_fail_on_non_windows() {
+        let config = Config::from_env();
+        for action in &["scroll", "double_click", "right_click"] {
+            let cmd = Command {
+                command_id: "test".to_string(),
+                action: action.to_string(),
+                parameters: HashMap::new(),
+                timeout_ms: 5000,
+            };
+            let result = execute_command(&cmd, &config);
+            assert!(!result.ok, "{action} should fail on non-Windows");
+            assert!(result.error.as_ref().unwrap().contains("requires Windows"));
+        }
     }
 }

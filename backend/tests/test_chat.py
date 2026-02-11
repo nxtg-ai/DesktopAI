@@ -229,3 +229,43 @@ async def test_chat_new_conversation_created(client):
     cid1 = resp1.json()["conversation_id"]
     cid2 = resp2.json()["conversation_id"]
     assert cid1 != cid2
+
+
+@pytest.mark.anyio
+async def test_chat_includes_screenshot_when_available(client):
+    """Chat response includes screenshot_b64 when desktop event has one."""
+    from app.schemas import WindowEvent
+
+    event = WindowEvent(
+        type="foreground",
+        hwnd="0x1234",
+        title="Document.docx - Word",
+        process_exe="WINWORD.EXE",
+        pid=5678,
+        timestamp=datetime(2025, 7, 1, 12, 0, 0, tzinfo=timezone.utc),
+        source="test",
+        screenshot_b64="aW1hZ2VkYXRh",  # base64 of "imagedata"
+    )
+    await store.record(event)
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post("/api/chat", json={"message": "what do you see?"})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("screenshot_b64") == "aW1hZ2VkYXRh"
+    assert data["desktop_context"]["screenshot_available"] is True
+
+
+@pytest.mark.anyio
+async def test_chat_omits_screenshot_when_unavailable(client):
+    """Chat response does not include screenshot_b64 when not present."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post("/api/chat", json={"message": "hello"})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "screenshot_b64" not in data

@@ -64,3 +64,32 @@ async def test_event_count_accumulates(status_store):
     assert snap["total_events"] == 5
     assert snap["uia_events"] == 3  # 0, 2, 4
     assert snap["last_source"] == "src-4"
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_tracked(status_store):
+    now = datetime.now(timezone.utc)
+    await status_store.note_heartbeat(now)
+    snap = await status_store.snapshot()
+    assert snap["last_heartbeat_at"] == now.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_clears_heartbeat(status_store):
+    now = datetime.now(timezone.utc)
+    await status_store.note_ws_connected(now)
+    await status_store.note_heartbeat(now)
+    snap = await status_store.snapshot()
+    assert snap["last_heartbeat_at"] is not None
+
+    later = datetime.now(timezone.utc)
+    await status_store.note_ws_disconnected(later)
+    snap = await status_store.snapshot()
+    assert snap["last_heartbeat_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_initial_snapshot_has_heartbeat_field(status_store):
+    snap = await status_store.snapshot()
+    assert "last_heartbeat_at" in snap
+    assert snap["last_heartbeat_at"] is None

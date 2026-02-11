@@ -103,6 +103,7 @@ class Settings:
     notification_idle_threshold_s: int = _env_int("NOTIFICATION_IDLE_THRESHOLD_S", 300)
     notification_max_count: int = _env_int("NOTIFICATION_MAX_COUNT", 200)
     ws_max_connections: int = _env_int("WS_MAX_CONNECTIONS", 50)
+    collector_heartbeat_interval_s: int = _env_int("COLLECTOR_HEARTBEAT_INTERVAL_S", 30)
 
     allowed_origins: List[str] = field(
         default_factory=lambda: [
