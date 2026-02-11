@@ -18,6 +18,7 @@ from .classifier import ActivityClassifier
 from .collector_status import CollectorStatusStore
 from .config import settings
 from .db import EventDatabase
+from .llm_provider import LLMProvider, OpenAIProvider
 from .memory import TrajectoryStore
 from .notification_engine import NotificationEngine
 from .notifications import NotificationStore
@@ -59,6 +60,18 @@ ui_telemetry = UiTelemetryStore(
 )
 hub = WebSocketHub(max_connections=settings.ws_max_connections)
 ollama = OllamaClient(settings.ollama_url, settings.ollama_model)
+
+# LLM provider: defaults to Ollama, can be swapped to OpenAI-compatible
+llm: LLMProvider
+if settings.llm_provider == "openai" and settings.openai_api_key:
+    llm = OpenAIProvider(
+        api_key=settings.openai_api_key,
+        model=settings.openai_model,
+        base_url=settings.openai_base_url,
+    )
+else:
+    llm = ollama
+
 db = EventDatabase(
     settings.db_path,
     settings.db_retention_days,

@@ -49,6 +49,12 @@ async def get_desktop_snapshot() -> dict:
     }
 
 
+@router.get("/api/state/session")
+async def get_session_summary() -> dict:
+    """Return a rolling 30-minute session summary with app switches and dwell times."""
+    return await store.session_summary()
+
+
 @router.get("/api/events")
 async def get_events(limit: Optional[int] = None) -> dict:
     """List recent desktop events."""

@@ -200,9 +200,13 @@
                 Parallel agents
                 <input id="autonomy-parallel-agents" type="number" min="1" max="16" value="3" />
               </label>
-              <label class="autonomy-toggle">
-                <input id="autonomy-auto-approve" type="checkbox" />
-                Auto-approve irreversible
+              <label class="autonomy-field">
+                Autonomy level
+                <select id="autonomy-level" aria-label="Autonomy level">
+                  <option value="supervised">Supervised</option>
+                  <option value="guided">Guided</option>
+                  <option value="autonomous">Autonomous</option>
+                </select>
               </label>
             </div>
             <div class="voice-controls">

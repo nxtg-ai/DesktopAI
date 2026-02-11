@@ -12,6 +12,7 @@ from ..deps import (
     autonomy,
     bridge,
     chat_memory,
+    llm,
     ollama,
     store,
     trajectory_store,
@@ -175,7 +176,10 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         conversation_id, "user", message, desktop_context=ctx_dict
     )
 
-    is_available = await ollama.available()
+    # Fetch session summary for enriched context
+    session = await store.session_summary()
+
+    is_available = await llm.available()
     if is_available:
         # Build multi-turn messages array
         llm_messages = []
@@ -185,6 +189,17 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         ]
         if ctx:
             system_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
+        if session.get("app_switches", 0) > 0:
+            top = ", ".join(
+                f"{a['process']} ({a['dwell_s']}s)"
+                for a in session.get("top_apps", [])[:3]
+            )
+            system_parts.append(
+                f"\nSession: {session['app_switches']} app switches, "
+                f"{session['unique_apps']} unique apps, "
+                f"session {round(session.get('session_duration_s', 0) / 60, 1)} min. "
+                f"Top: {top}"
+            )
         if action_triggered:
             system_parts.append(
                 f"\nI've started an autonomous task for: {message}. "
@@ -199,7 +214,7 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         # Add new user message
         llm_messages.append({"role": "user", "content": message})
 
-        llm_response = await ollama.chat(llm_messages)
+        llm_response = await llm.chat(llm_messages)
         if llm_response and llm_response.strip():
             response_text = llm_response.strip()
             await chat_memory.save_message(

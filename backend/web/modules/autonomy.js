@@ -2,7 +2,7 @@
 
 import {
   appState, avatar, autonomyStatusEl, autonomyObjectiveEl, autonomyMaxIterationsEl,
-  autonomyParallelAgentsEl, autonomyAutoApproveEl, autonomyStartBtn, autonomyApproveBtn,
+  autonomyParallelAgentsEl, autonomyLevelEl, autonomyStartBtn, autonomyApproveBtn,
   autonomyCancelBtn, autonomyRunMetaEl, autonomyLogEl, readinessGateBtn,
   readinessGateResultEl, readinessMatrixObjectivesEl, readinessMatrixBtn,
   readinessMatrixResultEl, readinessMatrixResultsEl, formatTime,
@@ -55,7 +55,8 @@ export function applyRunUiState(run) {
   appState.activeApprovalToken = run.approval_token || null;
   setAutonomyStatus(run.status);
   const runPlannerMode = run.planner_mode || "deterministic";
-  const runFingerprint = `${run.run_id}|${run.status}|${run.iteration}|${appState.activeApprovalToken ? "1" : "0"}|${runPlannerMode}`;
+  const runAutonomyLevel = run.autonomy_level || "supervised";
+  const runFingerprint = `${run.run_id}|${run.status}|${run.iteration}|${appState.activeApprovalToken ? "1" : "0"}|${runPlannerMode}|${runAutonomyLevel}`;
   if (runFingerprint !== appState.lastRunFingerprint) {
     if (run.status === "waiting_approval") {
       queueTelemetry("autonomy_waiting_approval", "autonomy run waiting approval", { run_id: run.run_id, iteration: run.iteration, planner_mode: runPlannerMode });
@@ -64,7 +65,7 @@ export function applyRunUiState(run) {
     }
     appState.lastRunFingerprint = runFingerprint;
   }
-  autonomyRunMetaEl.textContent = `Run: ${run.run_id} \u00b7 mode ${runPlannerMode} \u00b7 iteration ${run.iteration}/${run.max_iterations}`;
+  autonomyRunMetaEl.textContent = `Run: ${run.run_id} \u00b7 ${runAutonomyLevel} \u00b7 mode ${runPlannerMode} \u00b7 iteration ${run.iteration}/${run.max_iterations}`;
   autonomyApproveBtn.disabled = run.status !== "waiting_approval" || !appState.activeApprovalToken;
   autonomyCancelBtn.disabled = ["completed", "failed", "cancelled"].includes(run.status);
   autonomyStartBtn.disabled = run.status === "running" || run.status === "waiting_approval";
@@ -80,11 +81,12 @@ export async function startAutonomyRun() {
     queueTelemetry("autonomy_start_rejected", "objective required");
     return;
   }
+  const autonomyLevel = (autonomyLevelEl && autonomyLevelEl.value) || "supervised";
   const body = {
     objective,
     max_iterations: Number(autonomyMaxIterationsEl.value || 24),
     parallel_agents: Number(autonomyParallelAgentsEl.value || 3),
-    auto_approve_irreversible: Boolean(autonomyAutoApproveEl.checked),
+    autonomy_level: autonomyLevel,
   };
   autonomyStartBtn.disabled = true;
   queueTelemetry("autonomy_start_requested", "start clicked", { objective, ...body });
@@ -149,12 +151,12 @@ export async function runReadinessGateFromUi() {
     objective, timeout_s: 30,
     max_iterations: Number(autonomyMaxIterationsEl.value || 24),
     parallel_agents: Number(autonomyParallelAgentsEl.value || 3),
-    auto_approve_irreversible: Boolean(autonomyAutoApproveEl.checked),
+    auto_approve_irreversible: false,
     require_preflight_ok: true,
   };
   readinessGateBtn.disabled = true;
   readinessGateResultEl.textContent = "Readiness Gate: running\u2026";
-  queueTelemetry("readiness_gate_requested", "readiness gate requested", { objective, auto_approve_irreversible: body.auto_approve_irreversible });
+  queueTelemetry("readiness_gate_requested", "readiness gate requested", { objective });
   try {
     const resp = await fetch("/api/readiness/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const payload = await resp.json();
@@ -206,12 +208,12 @@ export async function runReadinessMatrixFromUi() {
     objectives, timeout_s: 30,
     max_iterations: Number(autonomyMaxIterationsEl.value || 24),
     parallel_agents: Number(autonomyParallelAgentsEl.value || 3),
-    auto_approve_irreversible: Boolean(autonomyAutoApproveEl.checked),
+    auto_approve_irreversible: false,
     require_preflight_ok: true, stop_on_failure: false,
   };
   readinessMatrixBtn.disabled = true;
   readinessMatrixResultEl.textContent = "Readiness Matrix: running\u2026";
-  queueTelemetry("readiness_matrix_requested", "readiness matrix requested", { objectives: objectives.length, auto_approve_irreversible: body.auto_approve_irreversible });
+  queueTelemetry("readiness_matrix_requested", "readiness matrix requested", { objectives: objectives.length });
   try {
     const resp = await fetch("/api/readiness/matrix", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const payload = await resp.json();

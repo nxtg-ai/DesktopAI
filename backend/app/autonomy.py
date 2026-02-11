@@ -116,6 +116,7 @@ class AutonomousRunner:
             max_iterations=request.max_iterations,
             parallel_agents=request.parallel_agents,
             auto_approve_irreversible=request.auto_approve_irreversible,
+            autonomy_level=request.autonomy_level,
             approval_token=None,
             last_error=None,
             started_at=now,
@@ -275,11 +276,21 @@ class AutonomousRunner:
         self._append_log(run, "executor", "Applied current task plan to runtime.")
 
         if task.status == "waiting_approval":
-            if run.auto_approve_irreversible and task.approval_token:
+            # Autonomy level governs approval behaviour:
+            #   supervised — always block for human approval
+            #   guided    — auto-approve irreversible steps (legacy auto_approve_irreversible)
+            #   autonomous — skip approval entirely, execute everything
+            should_auto = (
+                run.autonomy_level == "autonomous"
+                or run.autonomy_level == "guided"
+                or run.auto_approve_irreversible
+            )
+            if should_auto and task.approval_token:
+                level_label = run.autonomy_level
                 self._append_log(
                     run,
                     "verifier",
-                    "Irreversible step auto-approved by configuration.",
+                    f"Irreversible step auto-approved (level={level_label}).",
                 )
                 approved = await self._orchestrator.approve(
                     run.task_id, TaskApproveRequest(approval_token=task.approval_token)

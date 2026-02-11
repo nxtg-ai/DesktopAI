@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from datetime import datetime
-from typing import Deque, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Deque, Dict, List, Optional
 
 from .schemas import WindowEvent
+
+_SESSION_WINDOW_S = 1800  # 30-minute rolling window
 
 
 class StateStore:
@@ -17,6 +19,9 @@ class StateStore:
         self._idle: bool = False
         self._idle_since: Optional[datetime] = None
         self._lock = asyncio.Lock()
+        # Session tracking: list of (timestamp, process_exe) for foreground switches
+        self._fg_switches: List[tuple[datetime, str]] = []
+        self._session_start: Optional[datetime] = None
 
     async def record(self, event: WindowEvent) -> None:
         snapshot = self._clone_event(event)
@@ -24,6 +29,11 @@ class StateStore:
             self._events.append(snapshot)
             if snapshot.type == "foreground":
                 self._current = snapshot
+                self._fg_switches.append(
+                    (snapshot.timestamp, snapshot.process_exe or "")
+                )
+                if self._session_start is None:
+                    self._session_start = snapshot.timestamp
             elif snapshot.type == "idle":
                 self._idle = True
                 self._idle_since = snapshot.timestamp
@@ -60,6 +70,10 @@ class StateStore:
         async with self._lock:
             return self._idle, self._idle_since
 
+    async def session_summary(self) -> Dict[str, Any]:
+        async with self._lock:
+            return self._compute_session_summary()
+
     async def hydrate(
         self,
         events: List[WindowEvent],
@@ -83,6 +97,55 @@ class StateStore:
             self._current = None
             self._idle = False
             self._idle_since = None
+            self._fg_switches.clear()
+            self._session_start = None
+
+    def _compute_session_summary(self) -> Dict[str, Any]:
+        """Build a session summary from recent foreground switches (no lock)."""
+        now = datetime.now(timezone.utc)
+        cutoff = now.timestamp() - _SESSION_WINDOW_S
+
+        # Prune old switches
+        self._fg_switches = [
+            (ts, exe) for ts, exe in self._fg_switches if ts.timestamp() > cutoff
+        ]
+
+        switches = self._fg_switches
+        if not switches:
+            return {
+                "app_switches": 0,
+                "unique_apps": 0,
+                "top_apps": [],
+                "session_duration_s": 0,
+            }
+
+        # Dwell time: time between consecutive switches attributed to the earlier app
+        dwell: Dict[str, float] = {}
+        for i in range(len(switches) - 1):
+            exe = switches[i][1]
+            dt = (switches[i + 1][0] - switches[i][0]).total_seconds()
+            dwell[exe] = dwell.get(exe, 0.0) + dt
+        # Current app gets dwell from last switch to now
+        last_exe = switches[-1][1]
+        dwell[last_exe] = dwell.get(last_exe, 0.0) + (
+            now - switches[-1][0]
+        ).total_seconds()
+
+        # Sort by dwell descending, top 5
+        top_apps = sorted(dwell.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        session_duration = 0.0
+        if self._session_start:
+            session_duration = (now - self._session_start).total_seconds()
+
+        return {
+            "app_switches": len(switches),
+            "unique_apps": len(dwell),
+            "top_apps": [
+                {"process": exe, "dwell_s": round(s, 1)} for exe, s in top_apps
+            ],
+            "session_duration_s": round(session_duration, 1),
+        }
 
     def _clone_event(self, event: WindowEvent) -> WindowEvent:
         if hasattr(event, "model_copy"):

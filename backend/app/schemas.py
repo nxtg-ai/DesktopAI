@@ -90,6 +90,7 @@ TaskStatus = Literal[
 
 TaskStepStatus = Literal["pending", "running", "succeeded", "failed", "blocked", "skipped"]
 AutonomyRunStatus = Literal["running", "waiting_approval", "completed", "failed", "cancelled"]
+AutonomyLevel = Literal["supervised", "guided", "autonomous"]
 
 
 class TaskAction(BaseModel):
@@ -150,6 +151,7 @@ class AutonomyStartRequest(BaseModel):
     max_iterations: int = Field(default=24, ge=1, le=500)
     parallel_agents: int = Field(default=3, ge=1, le=16)
     auto_approve_irreversible: bool = False
+    autonomy_level: AutonomyLevel = "supervised"
 
 
 class AutonomyApproveRequest(BaseModel):
@@ -209,6 +211,7 @@ class AutonomyRunRecord(BaseModel):
     max_iterations: int
     parallel_agents: int = 3
     auto_approve_irreversible: bool = False
+    autonomy_level: AutonomyLevel = "supervised"
     approval_token: Optional[str] = None
     last_error: Optional[str] = None
     started_at: datetime
