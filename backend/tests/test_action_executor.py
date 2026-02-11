@@ -241,3 +241,22 @@ def test_auto_mode_bridge_none_no_crash():
     with patch("app.action_executor._is_windows_platform", return_value=False):
         exe = build_action_executor(mode="auto", powershell_executable="", timeout_s=5, bridge=None)
         assert isinstance(exe, SimulatedTaskActionExecutor)
+
+
+def test_auto_mode_prefers_bridge_even_when_not_connected():
+    """Auto mode must return BridgeActionExecutor even when bridge.connected=False.
+
+    The executor is built once at startup before the collector connects.
+    BridgeActionExecutor handles disconnection gracefully at runtime.
+    This test guards against the regression from Sprint 3 (e2c0288) which
+    re-introduced a `connected` check that broke the startup path.
+    """
+    mock_bridge = MagicMock()
+    mock_bridge.connected = False  # Simulates startup state before collector connects
+    with patch("app.action_executor._is_windows_platform", return_value=False):
+        exe = build_action_executor(mode="auto", powershell_executable="", timeout_s=5, bridge=mock_bridge)
+        assert isinstance(exe, BridgeActionExecutor), (
+            "auto mode must select BridgeActionExecutor at startup even when "
+            "bridge is not yet connected — runtime disconnection is handled by "
+            "BridgeActionExecutor.execute(), not the factory"
+        )

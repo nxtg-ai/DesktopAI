@@ -15,6 +15,9 @@ os.environ.setdefault("CLASSIFIER_USE_OLLAMA", "0")
 os.environ.setdefault("CLASSIFIER_DEFAULT", "docs")
 os.environ.setdefault("UI_TELEMETRY_ARTIFACT_DIR", "/tmp/desktopai-ui-telemetry-test")
 os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "120")
+# Use simulated executor in tests — bridge executor needs a real collector.
+# Executor factory behavior is tested directly in test_action_executor.py.
+os.environ.setdefault("ACTION_EXECUTOR_MODE", "simulated")
 
 from app.auth import _rate_limiter
 from app.main import autonomy, db, ollama, planner, runtime_logs, settings, store, tasks

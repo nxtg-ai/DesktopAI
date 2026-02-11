@@ -148,6 +148,4 @@ class StateStore:
         }
 
     def _clone_event(self, event: WindowEvent) -> WindowEvent:
-        if hasattr(event, "model_copy"):
-            return event.model_copy(deep=True)
-        return event.copy(deep=True)
+        return event.model_copy(deep=True)

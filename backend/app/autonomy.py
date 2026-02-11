@@ -374,9 +374,7 @@ class AutonomousRunner:
             logger.debug("Broadcast callback failed: %s", exc)
 
     def _clone_run(self, run: AutonomyRunRecord) -> AutonomyRunRecord:
-        if hasattr(run, "model_copy"):
-            return run.model_copy(deep=True)
-        return run.copy(deep=True)
+        return run.model_copy(deep=True)
 
 
 class VisionAutonomousRunner:
@@ -549,13 +547,11 @@ class VisionAutonomousRunner:
     async def _notify_update(self, run) -> None:
         if self._on_run_update is None:
             return
-        snapshot = self._clone_run(run) if hasattr(run, "model_copy") or hasattr(run, "copy") else run
+        snapshot = self._clone_run(run)
         try:
             await self._on_run_update(snapshot)
         except Exception as exc:
             logger.debug("Broadcast callback failed: %s", exc)
 
     def _clone_run(self, run: AutonomyRunRecord) -> AutonomyRunRecord:
-        if hasattr(run, "model_copy"):
-            return run.model_copy(deep=True)
-        return run.copy(deep=True)
+        return run.model_copy(deep=True)

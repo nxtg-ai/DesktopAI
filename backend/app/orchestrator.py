@@ -286,11 +286,7 @@ class TaskOrchestrator:
                 step.updated_at = step.started_at
                 step_index = next_idx
                 objective = task.objective
-                action_snapshot = (
-                    step.action.model_copy(deep=True)
-                    if hasattr(step.action, "model_copy")
-                    else step.action.copy(deep=True)
-                )
+                action_snapshot = step.action.model_copy(deep=True)
 
             if action_snapshot is None:
                 raise RuntimeError("internal error: missing action snapshot")
@@ -419,6 +415,4 @@ class TaskOrchestrator:
         job.add_done_callback(self._update_jobs.discard)
 
     def _clone_task(self, task: TaskRecord) -> TaskRecord:
-        if hasattr(task, "model_copy"):
-            return task.model_copy(deep=True)
-        return task.copy(deep=True)
+        return task.model_copy(deep=True)
