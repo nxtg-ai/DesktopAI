@@ -382,7 +382,7 @@ class VisionAutonomousRunner:
 
     def __init__(
         self,
-        vision_agent,
+        vision_agent=None,
         on_run_update: Optional[Callable[[AutonomyRunRecord], Awaitable[None]]] = None,
         trajectory_store=None,
     ) -> None:
@@ -393,6 +393,10 @@ class VisionAutonomousRunner:
         self._order: List[str] = []
         self._workers: Dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
+
+    def set_agent(self, agent) -> None:
+        """Set or replace the vision agent for the next run."""
+        self._agent = agent
 
     async def start(self, request: AutonomyStartRequest) -> AutonomyRunRecord:
         now = _utcnow()

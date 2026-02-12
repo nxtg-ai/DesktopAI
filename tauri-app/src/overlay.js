@@ -23,13 +23,16 @@ const micBtn = $("mic-btn");
 const voiceState = $("voice-state");
 const compactToggle = $("compact-toggle");
 const closeBtn = $("close-btn");
+const killBtn = $("kill-btn");
 
 // ── State ───────────────────────────────────────────────────────────
 let ws = null;
 let wsRetryMs = 1000;
+let activeRunIds = new Set();
 let isCompact = false;
 let desktopContext = null;
 let isSending = false;
+let conversationId = null;
 
 // ── Avatar Engine (Three.js) ────────────────────────────────────────
 const STATUS_COLORS = {
@@ -181,6 +184,10 @@ class AvatarEngine {
 
   setSpeaking(on) {
     this.speaking = Boolean(on);
+  }
+
+  setColor(hex) {
+    this.targetColor.setHex(hex);
   }
 
   _animate() {
@@ -469,6 +476,10 @@ function handleWSMessage(data) {
     const run = data.run;
     if (run) handleAutonomyUpdate(run);
   }
+
+  if (data.type === "notification") {
+    fetchNotificationCount();
+  }
 }
 
 // ── Status ──────────────────────────────────────────────────────────
@@ -489,6 +500,7 @@ function updateContext(data) {
   contextText.textContent = display;
   contextBar.classList.add("has-context");
   desktopContext = data;
+  fetchRecipes(); // Refresh context-aware recipe chips
 }
 
 async function fetchContext() {
@@ -500,6 +512,125 @@ async function fetchContext() {
     }
   } catch {}
 }
+
+// ── Notifications ────────────────────────────────────────────────────
+const notifBtn = $("notif-btn");
+const notifBadge = $("notif-badge");
+const notifDropdown = $("notif-dropdown");
+const notifList = $("notif-list");
+
+async function fetchNotificationCount() {
+  try {
+    const r = await fetch(`${API_BASE}/api/notifications/count`);
+    if (r.ok) {
+      const data = await r.json();
+      const count = data.unread_count || 0;
+      if (notifBadge) {
+        notifBadge.textContent = count > 99 ? "99+" : String(count);
+        notifBadge.classList.toggle("hidden", count === 0);
+      }
+    }
+  } catch {}
+}
+
+async function fetchNotifications() {
+  try {
+    const r = await fetch(`${API_BASE}/api/notifications?limit=5&unread_only=true`);
+    if (r.ok) {
+      const data = await r.json();
+      renderNotifications(data.notifications || []);
+    }
+  } catch {}
+}
+
+function renderNotifications(notifications) {
+  if (!notifList) return;
+  if (notifications.length === 0) {
+    notifList.innerHTML = '<div class="notif-empty">No notifications</div>';
+    return;
+  }
+  notifList.innerHTML = notifications.map((n) =>
+    `<div class="notif-item" data-id="${n.id}">
+      <div class="notif-title">${n.title || n.type}</div>
+      <div class="notif-body">${n.message || ""}</div>
+    </div>`
+  ).join("");
+
+  notifList.querySelectorAll(".notif-item").forEach((el) => {
+    el.addEventListener("click", async () => {
+      const id = el.dataset.id;
+      await fetch(`${API_BASE}/api/notifications/${id}/read`, { method: "POST" });
+      el.remove();
+      fetchNotificationCount();
+    });
+  });
+}
+
+if (notifBtn) {
+  notifBtn.addEventListener("click", () => {
+    if (notifDropdown) {
+      notifDropdown.classList.toggle("hidden");
+      if (!notifDropdown.classList.contains("hidden")) {
+        fetchNotifications();
+      }
+    }
+  });
+}
+
+// Close dropdown when clicking outside
+document.addEventListener("click", (e) => {
+  if (notifDropdown && !notifDropdown.contains(e.target) && e.target !== notifBtn && !notifBtn.contains(e.target)) {
+    notifDropdown.classList.add("hidden");
+  }
+});
+
+// Poll notification count every 30s
+setInterval(fetchNotificationCount, 30000);
+fetchNotificationCount();
+
+// ── Recipe Chips ─────────────────────────────────────────────────────
+const recipeChipsEl = $("recipe-chips");
+
+async function fetchRecipes() {
+  try {
+    const r = await fetch(`${API_BASE}/api/recipes`);
+    if (r.ok) {
+      const data = await r.json();
+      renderRecipeChips(data.recipes || []);
+    }
+  } catch {}
+}
+
+function renderRecipeChips(recipes) {
+  if (!recipeChipsEl) return;
+  if (recipes.length === 0) {
+    recipeChipsEl.classList.add("hidden");
+    return;
+  }
+  recipeChipsEl.classList.remove("hidden");
+  recipeChipsEl.innerHTML = recipes.map((r) =>
+    `<button class="recipe-chip" data-desc="${r.description}">${r.name}</button>`
+  ).join("");
+
+  recipeChipsEl.querySelectorAll(".recipe-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      sendMessage(btn.dataset.desc);
+    });
+  });
+}
+
+fetchRecipes();
+
+// ── Personality Mode ─────────────────────────────────────────────────
+let personalityMode = "assistant";
+
+document.querySelectorAll(".persona-pill").forEach((pill) => {
+  pill.addEventListener("click", () => {
+    document.querySelectorAll(".persona-pill").forEach((p) => p.classList.remove("active"));
+    pill.classList.add("active");
+    personalityMode = pill.dataset.mode;
+  });
+});
 
 // ── Markdown ─────────────────────────────────────────────────────────
 function renderMarkdown(text) {
@@ -523,18 +654,75 @@ function handleAutonomyUpdate(run) {
     contextBar.parentElement.insertBefore(runEl, contextBar.nextSibling);
   }
 
+  // Build header + step log
+  const icon = run.status === "running" ? "\u27F3"
+    : run.status === "completed" ? "\u2713"
+    : run.status === "cancelled" ? "\u2718"
+    : "\u2717";
+
+  const headerText = run.status === "failed"
+    ? (run.last_error || run.objective)
+    : run.status === "cancelled"
+    ? `Cancelled: ${run.objective}`
+    : run.objective;
+
+  const iterInfo = run.iteration > 0 ? ` (step ${run.iteration})` : "";
+
+  runEl.innerHTML = `<div class="run-header">${icon} ${headerText}${iterInfo}</div>`;
+
+  // Show last 3 agent log entries for running status
+  if (run.status === "running" && run.agent_log && run.agent_log.length > 0) {
+    const stepsEl = document.createElement("div");
+    stepsEl.className = "run-steps";
+    const recent = run.agent_log.slice(-3);
+    stepsEl.textContent = recent.map((e) => e.message).join(" \u2192 ");
+    runEl.appendChild(stepsEl);
+  }
+
   if (run.status === "running") {
-    runEl.textContent = `\u27F3 ${run.objective}`;
+    activeRunIds.add(run.run_id);
     runEl.className = "run-status running";
+    avatar.setColor(0x4488ff);
   } else if (run.status === "completed") {
-    runEl.textContent = `\u2713 ${run.objective}`;
+    activeRunIds.delete(run.run_id);
     runEl.className = "run-status completed";
     setTimeout(() => runEl.remove(), 5000);
   } else if (run.status === "failed") {
-    runEl.textContent = `\u2717 ${run.last_error || run.objective}`;
+    activeRunIds.delete(run.run_id);
     runEl.className = "run-status failed";
     setTimeout(() => runEl.remove(), 8000);
+  } else if (run.status === "cancelled") {
+    activeRunIds.delete(run.run_id);
+    runEl.className = "run-status failed";
+    setTimeout(() => runEl.remove(), 3000);
   }
+
+  // Show/hide kill button based on active runs
+  if (killBtn) {
+    killBtn.classList.toggle("hidden", activeRunIds.size === 0);
+  }
+  if (activeRunIds.size === 0) {
+    avatar.setColor(STATUS_COLORS.live);
+  }
+}
+
+async function killAllRuns() {
+  try {
+    const res = await fetch(`${API_BASE}/api/autonomy/cancel-all`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.cancelled > 0) {
+        appendMessage("agent", `Killed ${data.cancelled} running action(s).`, { source: "system" });
+      }
+    }
+  } catch {
+    appendMessage("agent", "Could not reach backend to kill runs.", { source: "error" });
+  }
+  activeRunIds.clear();
+  if (killBtn) killBtn.classList.add("hidden");
+  avatar.setColor(STATUS_COLORS.live);
 }
 
 // ── Chat ────────────────────────────────────────────────────────────
@@ -611,13 +799,21 @@ async function sendMessage(text) {
     const res = await fetch(`${API_BASE}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, allow_actions: true }),
+      body: JSON.stringify({
+        message: text,
+        allow_actions: true,
+        conversation_id: conversationId,
+        personality_mode: personalityMode,
+      }),
     });
 
     hideTyping();
 
     if (res.ok) {
       const data = await res.json();
+      if (data.conversation_id) {
+        conversationId = data.conversation_id;
+      }
       avatar.bump(0.4);
       const agentText = data.response || "No response";
       appendMessage("agent", agentText, {
@@ -646,8 +842,28 @@ async function sendMessage(text) {
   }
 }
 
+function startNewChat() {
+  conversationId = null;
+  // Clear all messages except the welcome element
+  Array.from(chatMessages.children).forEach((child) => {
+    if (child !== chatWelcome) child.remove();
+  });
+  if (chatWelcome) chatWelcome.style.display = "";
+  chatInput.value = "";
+  chatInput.focus();
+}
+
 // ── Event Listeners ─────────────────────────────────────────────────
 sendBtn.addEventListener("click", () => sendMessage(chatInput.value));
+
+const newChatBtn = $("new-chat-btn");
+if (newChatBtn) {
+  newChatBtn.addEventListener("click", startNewChat);
+}
+
+if (killBtn) {
+  killBtn.addEventListener("click", killAllRuns);
+}
 
 micBtn.addEventListener("click", toggleListening);
 
@@ -655,6 +871,17 @@ chatInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     sendMessage(chatInput.value);
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.shiftKey && e.key === "N") {
+    e.preventDefault();
+    startNewChat();
+  }
+  if (e.ctrlKey && e.shiftKey && e.key === "X") {
+    e.preventDefault();
+    killAllRuns();
   }
 });
 

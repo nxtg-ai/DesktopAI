@@ -165,3 +165,4 @@ notification_store = _deps.notification_store
 notification_engine = _deps.notification_engine
 personality_adapter = _deps.personality_adapter
 autonomy_promoter = _deps.autonomy_promoter
+vision_runner = _deps.vision_runner

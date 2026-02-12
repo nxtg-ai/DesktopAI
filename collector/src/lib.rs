@@ -1,3 +1,10 @@
+//! DesktopAI Collector — Windows desktop observation and command execution agent.
+//!
+//! Captures foreground window changes, idle/active state, UIA element trees,
+//! and optional screenshots. Sends events to the Python backend over WebSocket.
+//! Receives and executes desktop commands (click, type, scroll, etc.) via the
+//! same WebSocket connection (command bridge).
+
 pub mod config;
 pub mod event;
 pub mod network;

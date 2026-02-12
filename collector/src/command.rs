@@ -1,8 +1,14 @@
+//! Command bridge: receives desktop automation commands from the backend and executes them.
+//! Supports: observe, click, type_text, send_keys, open_application, focus_window,
+//! scroll, double_click, right_click. Uses UIA (UI Automation) for element resolution
+//! and SendInput for mouse/keyboard actions on Windows.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::config::Config;
 
+/// A command received from the backend for desktop automation.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Command {
     pub command_id: String,
@@ -17,6 +23,8 @@ fn default_timeout_ms() -> u64 {
     5000
 }
 
+/// Result of executing a command, sent back to the backend. Optionally includes
+/// a post-action screenshot and UIA snapshot for the agent's verification loop.
 #[derive(Debug, Serialize, Clone)]
 pub struct CommandResult {
     #[serde(rename = "type")]
@@ -95,24 +103,27 @@ fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
         None
     };
 
+    // Get foreground window info
+    use crate::windows::{window_title, process_path};
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    let hwnd = unsafe { GetForegroundWindow() };
+    let title = window_title(hwnd);
+    let mut pid: u32 = 0;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)); }
+    let process = process_path(pid);
+
     // Capture UIA snapshot if enabled
     let uia = if config.uia_enabled {
         use crate::uia::uia_snapshot;
-        match uia_snapshot(config.uia_max_depth, config.uia_text_max) {
+        match uia_snapshot(hwnd, config) {
             Some(snapshot) => serde_json::to_value(&snapshot).ok(),
             None => None,
         }
     } else {
         None
     };
-
-    // Get foreground window info
-    use crate::windows::{window_title, process_path};
-    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-
-    let hwnd = unsafe { GetForegroundWindow() };
-    let title = window_title(hwnd);
-    let process = process_path(hwnd);
 
     result.insert("window_title".to_string(), serde_json::Value::String(title));
     result.insert("process_exe".to_string(), serde_json::Value::String(process));
@@ -129,10 +140,22 @@ fn handle_observe(cmd: &Command, _config: &Config) -> CommandResult {
 }
 
 #[cfg(windows)]
+fn bstr_to_variant(s: &str) -> windows::Win32::System::Variant::VARIANT {
+    use windows::Win32::System::Variant::*;
+    let bstr = windows::core::BSTR::from(s);
+    unsafe {
+        let mut var: VARIANT = std::mem::zeroed();
+        let inner = &mut *var.Anonymous.Anonymous;
+        inner.vt = VT_BSTR;
+        inner.Anonymous.bstrVal = std::mem::ManuallyDrop::new(bstr);
+        var
+    }
+}
+
+#[cfg(windows)]
 fn handle_click(cmd: &Command, config: &Config) -> CommandResult {
     use windows::Win32::UI::Accessibility::*;
     use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
-    use windows::core::Interface;
 
     let name = cmd.parameters.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let automation_id = cmd.parameters.get("automation_id").and_then(|v| v.as_str()).unwrap_or("");
@@ -167,12 +190,12 @@ fn handle_click(cmd: &Command, config: &Config) -> CommandResult {
     // Build condition: prefer automation_id, fallback to name
     let condition = if !automation_id.is_empty() {
         let prop = UIA_AutomationIdPropertyId;
-        let val = windows::core::VARIANT::from(automation_id);
-        unsafe { uia.CreatePropertyCondition(prop, &val) }
+        let val = bstr_to_variant(automation_id);
+        unsafe { uia.CreatePropertyCondition(prop, val) }
     } else {
         let prop = UIA_NamePropertyId;
-        let val = windows::core::VARIANT::from(name);
-        unsafe { uia.CreatePropertyCondition(prop, &val) }
+        let val = bstr_to_variant(name);
+        unsafe { uia.CreatePropertyCondition(prop, val) }
     };
 
     let condition = match condition {
@@ -298,7 +321,7 @@ fn handle_type_text(cmd: &Command, config: &Config) -> CommandResult {
 
     if let Some(target_id) = target {
         if !target_id.is_empty() {
-            if let Some(typed) = try_set_value(target_id, text) {
+            if let Some(_typed) = try_set_value(target_id, text) {
                 let mut result = HashMap::new();
                 result.insert("typed".to_string(), serde_json::Value::String(text.to_string()));
                 result.insert("method".to_string(), serde_json::Value::String("value_pattern".to_string()));
@@ -332,7 +355,6 @@ fn handle_type_text(cmd: &Command, config: &Config) -> CommandResult {
 fn try_set_value(automation_id: &str, text: &str) -> Option<bool> {
     use windows::Win32::UI::Accessibility::*;
     use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
-    use windows::core::Interface;
 
     unsafe { let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED); }
 
@@ -341,8 +363,8 @@ fn try_set_value(automation_id: &str, text: &str) -> Option<bool> {
     };
     let root = unsafe { uia.GetRootElement().ok()? };
     let prop = UIA_AutomationIdPropertyId;
-    let val = windows::core::VARIANT::from(automation_id);
-    let condition = unsafe { uia.CreatePropertyCondition(prop, &val).ok()? };
+    let val = bstr_to_variant(automation_id);
+    let condition = unsafe { uia.CreatePropertyCondition(prop, val).ok()? };
     let element = unsafe { root.FindFirst(TreeScope_Descendants, &condition).ok()? };
 
     let value_pattern: Result<IUIAutomationValuePattern, _> = unsafe {
@@ -504,7 +526,7 @@ fn handle_send_keys(cmd: &Command, config: &Config) -> CommandResult {
 }
 
 #[cfg(windows)]
-fn parse_vk(key: &str) -> Option<VIRTUAL_KEY> {
+fn parse_vk(key: &str) -> Option<windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY> {
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
     match key.to_lowercase().as_str() {
         "a" => Some(VK_A), "b" => Some(VK_B), "c" => Some(VK_C), "d" => Some(VK_D),
@@ -596,10 +618,9 @@ fn handle_open_application(cmd: &Command, _config: &Config) -> CommandResult {
 
 #[cfg(windows)]
 fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::*;
+    use windows::core::PCWSTR;
 
     let title_pattern = cmd.parameters.get("title").and_then(|v| v.as_str()).unwrap_or("");
     let process_pattern = cmd.parameters.get("process").and_then(|v| v.as_str()).unwrap_or("");
@@ -608,29 +629,10 @@ fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
         return CommandResult::failure(&cmd.command_id, "focus_window requires 'title' or 'process' parameter");
     }
 
-    // Search pattern stored in thread-local for the callback
     let pattern_lower = title_pattern.to_lowercase();
-    let mut found_hwnd: Option<HWND> = None;
 
-    // Enumerate windows to find match
-    unsafe extern "system" fn enum_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let pattern = &*(lparam.0 as *const String);
-        let mut buf = [0u16; 512];
-        let len = GetWindowTextW(hwnd, &mut buf);
-        if len > 0 {
-            let title = String::from_utf16_lossy(&buf[..len as usize]).to_lowercase();
-            if title.contains(pattern.as_str()) {
-                // Store the found HWND via the same pointer (we'll use a different approach)
-                // For simplicity, we'll use a different enumeration approach below
-                return BOOL(0); // stop enumeration
-            }
-        }
-        BOOL(1)
-    }
-
-    // Simple approach: iterate visible windows
+    // Iterate visible windows to find match
     let mut target = HWND(0);
-    let mut check_hwnd = unsafe { GetForegroundWindow() };
 
     // Use FindWindowW for exact matches, or enumerate
     if !title_pattern.is_empty() {
@@ -648,7 +650,8 @@ fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
                     }
                 }
             }
-            current = unsafe { GetWindow(current, GW_HWNDNEXT).unwrap_or(HWND(0)) };
+            current = unsafe { GetWindow(current, GW_HWNDNEXT) };
+            if current.0 == 0 { break; }
         }
     }
 
@@ -724,14 +727,52 @@ fn handle_scroll(cmd: &Command, _config: &Config) -> CommandResult {
     CommandResult::failure(&cmd.command_id, "scroll requires Windows")
 }
 
+/// Resolve a UIA element by name or automation_id and return its bounding rect center.
+#[cfg(windows)]
+fn resolve_uia_coords(name: &str, automation_id: &str) -> Option<(i32, i32)> {
+    use windows::Win32::UI::Accessibility::*;
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+
+    unsafe { let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED); }
+
+    let uia: IUIAutomation = unsafe {
+        windows::Win32::System::Com::CoCreateInstance(
+            &CUIAutomation, None,
+            windows::Win32::System::Com::CLSCTX_INPROC_SERVER,
+        ).ok()?
+    };
+    let root = unsafe { uia.GetRootElement().ok()? };
+
+    let condition = if !automation_id.is_empty() {
+        unsafe { uia.CreatePropertyCondition(UIA_AutomationIdPropertyId, bstr_to_variant(automation_id)).ok()? }
+    } else {
+        unsafe { uia.CreatePropertyCondition(UIA_NamePropertyId, bstr_to_variant(name)).ok()? }
+    };
+
+    let element = unsafe { root.FindFirst(TreeScope_Descendants, &condition).ok()? };
+    let rect = unsafe { element.CurrentBoundingRectangle().ok()? };
+    Some(((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2))
+}
+
 #[cfg(windows)]
 fn handle_double_click(cmd: &Command, config: &Config) -> CommandResult {
-    let x = cmd.parameters.get("x").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
-    let y = cmd.parameters.get("y").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+    // Support name-based UIA resolution (same as click), with x/y fallback
+    let name = cmd.parameters.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let automation_id = cmd.parameters.get("automation_id").and_then(|v| v.as_str()).unwrap_or("");
 
-    if x < 0 || y < 0 {
-        return CommandResult::failure(&cmd.command_id, "double_click requires 'x' and 'y' parameters");
-    }
+    let (x, y) = if !name.is_empty() || !automation_id.is_empty() {
+        match resolve_uia_coords(name, automation_id) {
+            Some(coords) => coords,
+            None => return CommandResult::failure(&cmd.command_id, &format!("element not found: {}", if !name.is_empty() { name } else { automation_id })),
+        }
+    } else {
+        let x = cmd.parameters.get("x").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+        let y = cmd.parameters.get("y").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+        if x < 0 || y < 0 {
+            return CommandResult::failure(&cmd.command_id, "double_click requires 'name', 'automation_id', or 'x'/'y' parameters");
+        }
+        (x, y)
+    };
 
     // Move + double left-click using SendInput
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
@@ -808,12 +849,23 @@ fn handle_double_click(cmd: &Command, _config: &Config) -> CommandResult {
 
 #[cfg(windows)]
 fn handle_right_click(cmd: &Command, config: &Config) -> CommandResult {
-    let x = cmd.parameters.get("x").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
-    let y = cmd.parameters.get("y").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+    // Support name-based UIA resolution (same as click/double_click), with x/y fallback
+    let name = cmd.parameters.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let automation_id = cmd.parameters.get("automation_id").and_then(|v| v.as_str()).unwrap_or("");
 
-    if x < 0 || y < 0 {
-        return CommandResult::failure(&cmd.command_id, "right_click requires 'x' and 'y' parameters");
-    }
+    let (x, y) = if !name.is_empty() || !automation_id.is_empty() {
+        match resolve_uia_coords(name, automation_id) {
+            Some(coords) => coords,
+            None => return CommandResult::failure(&cmd.command_id, &format!("element not found: {}", if !name.is_empty() { name } else { automation_id })),
+        }
+    } else {
+        let x = cmd.parameters.get("x").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+        let y = cmd.parameters.get("y").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+        if x < 0 || y < 0 {
+            return CommandResult::failure(&cmd.command_id, "right_click requires 'name', 'automation_id', or 'x'/'y' parameters");
+        }
+        (x, y)
+    };
 
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
@@ -975,6 +1027,23 @@ mod tests {
         assert_eq!(cmd.action, "right_click");
         assert_eq!(cmd.parameters["x"], 50);
         assert_eq!(cmd.parameters["y"], 75);
+    }
+
+    #[test]
+    fn test_double_click_name_based_parse() {
+        let json = r#"{"command_id": "dc2", "action": "double_click", "parameters": {"name": "Submit"}}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert_eq!(cmd.action, "double_click");
+        assert_eq!(cmd.parameters["name"], "Submit");
+    }
+
+    #[test]
+    fn test_right_click_name_based_parse() {
+        let json = r#"{"command_id": "rc2", "action": "right_click", "parameters": {"name": "FileItem", "automation_id": "file_1"}}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert_eq!(cmd.action, "right_click");
+        assert_eq!(cmd.parameters["name"], "FileItem");
+        assert_eq!(cmd.parameters["automation_id"], "file_1");
     }
 
     #[cfg(not(windows))]

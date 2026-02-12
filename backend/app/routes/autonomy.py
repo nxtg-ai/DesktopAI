@@ -19,6 +19,7 @@ from ..deps import (
     db,
     planner,
     tasks,
+    vision_runner,
 )
 from ..schemas import (
     AutonomyApproveRequest,
@@ -97,14 +98,19 @@ async def clear_autonomy_planner_override() -> dict:
 @router.get("/api/autonomy/runs")
 async def list_autonomy_runs(limit: int = 50) -> dict:
     """List recent autonomy runs ordered by update time."""
-    runs = await autonomy.list_runs(limit=limit)
-    return {"runs": [_dump(run) for run in runs]}
+    orchestrator_runs = await autonomy.list_runs(limit=limit)
+    vision_runs = await vision_runner.list_runs(limit=limit)
+    all_runs = orchestrator_runs + vision_runs
+    all_runs.sort(key=lambda r: r.updated_at, reverse=True)
+    return {"runs": [_dump(run) for run in all_runs[:limit]]}
 
 
 @router.get("/api/autonomy/runs/{run_id}")
 async def get_autonomy_run(run_id: str) -> dict:
     """Get a single autonomy run by ID."""
     run = await autonomy.get_run(run_id)
+    if run is None:
+        run = await vision_runner.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
     return {"run": _dump(run)}
@@ -123,11 +129,40 @@ async def approve_autonomy_run(run_id: str, request: AutonomyApproveRequest) -> 
 @router.post("/api/autonomy/runs/{run_id}/cancel")
 async def cancel_autonomy_run(run_id: str) -> dict:
     """Cancel an in-progress autonomy run."""
+    # Try orchestrator-based runner first, then vision runner
     try:
         run = await autonomy.cancel(run_id)
+        return {"run": _dump(run)}
+    except KeyError:
+        pass
+    try:
+        run = await vision_runner.cancel(run_id)
     except Exception as exc:
         raise _autonomy_http_error(exc)
     return {"run": _dump(run)}
+
+
+@router.post("/api/autonomy/cancel-all")
+async def cancel_all_autonomy_runs() -> dict:
+    """Cancel ALL in-progress autonomy and vision runs (kill switch)."""
+    cancelled = []
+    # Cancel orchestrator runs
+    for run in await autonomy.list_runs(limit=100):
+        if run.status in {"running", "waiting_approval"}:
+            try:
+                result = await autonomy.cancel(run.run_id)
+                cancelled.append(_dump(result))
+            except Exception:
+                pass
+    # Cancel vision runs
+    for run in await vision_runner.list_runs(limit=100):
+        if run.status in {"running", "waiting_approval"}:
+            try:
+                result = await vision_runner.cancel(run.run_id)
+                cancelled.append(_dump(result))
+            except Exception:
+                pass
+    return {"cancelled": len(cancelled), "runs": cancelled}
 
 
 # ── Readiness gate & matrix ───────────────────────────────────────────────

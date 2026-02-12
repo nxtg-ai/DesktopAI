@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from fastapi.encoders import jsonable_encoder
 
 from .action_executor import build_action_executor
-from .autonomy import AutonomousRunner
+from .autonomy import AutonomousRunner, VisionAutonomousRunner
 from .autonomy_promoter import AutonomyPromoter
 from .bridge import CommandBridge
 from .chat_memory import ChatMemoryStore
@@ -160,6 +160,10 @@ async def _publish_autonomy_update(run) -> None:
 
 
 autonomy = AutonomousRunner(tasks, on_run_update=_publish_autonomy_update, planner=planner)
+vision_runner = VisionAutonomousRunner(
+    on_run_update=_publish_autonomy_update,
+    trajectory_store=trajectory_store,
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────

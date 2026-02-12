@@ -22,6 +22,9 @@ AVAILABLE ACTIONS (respond with exactly one JSON object):
 - {{"action": "send_keys", "parameters": {{"keys": "ctrl+c"}}, "reasoning": "why", "confidence": 0.9}}
 - {{"action": "open_application", "parameters": {{"application": "notepad.exe"}}, "reasoning": "why", "confidence": 0.9}}
 - {{"action": "focus_window", "parameters": {{"title": "Window Title"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "scroll", "parameters": {{"direction": "down", "amount": 3}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "double_click", "parameters": {{"name": "ItemName"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "right_click", "parameters": {{"name": "ItemName"}}, "reasoning": "why", "confidence": 0.9}}
 - {{"action": "wait", "parameters": {{}}, "reasoning": "waiting for UI to update", "confidence": 1.0}}
 - {{"action": "done", "parameters": {{}}, "reasoning": "objective completed because...", "confidence": 0.95}}
 

@@ -4,11 +4,9 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from ..autonomy import VisionAutonomousRunner
 from ..config import settings
 from ..deps import (
     _dump,
-    _publish_autonomy_update,
     autonomy,
     bridge,
     chat_memory,
@@ -17,6 +15,7 @@ from ..deps import (
     personality_adapter,
     store,
     trajectory_store,
+    vision_runner,
 )
 from ..recipes import match_recipe_by_keywords
 from ..schemas import AutonomyStartRequest, ChatRequest
@@ -96,21 +95,14 @@ async def get_bridge_status() -> dict:
     return bridge.status()
 
 
-@router.post("/api/agent/run")
-async def run_vision_agent(request: AutonomyStartRequest) -> dict:
-    """Start a vision-based autonomous agent run via the collector bridge."""
+def _build_vision_agent(max_iterations: int = 0):
+    """Build a VisionAgent with current settings."""
     from ..vision_agent import VisionAgent
 
-    if not bridge.connected:
-        raise HTTPException(status_code=503, detail="collector bridge not connected")
-
-    if not settings.vision_agent_enabled:
-        raise HTTPException(status_code=503, detail="vision agent disabled")
-
-    agent = VisionAgent(
+    return VisionAgent(
         bridge=bridge,
         ollama=ollama,
-        max_iterations=request.max_iterations or settings.vision_agent_max_iterations,
+        max_iterations=max_iterations or settings.vision_agent_max_iterations,
         vision_model=settings.ollama_vision_model or None,
         min_confidence=settings.vision_agent_min_confidence,
         max_consecutive_errors=settings.vision_agent_max_consecutive_errors,
@@ -119,12 +111,20 @@ async def run_vision_agent(request: AutonomyStartRequest) -> dict:
         trajectory_max_chars=settings.trajectory_context_max_chars,
         trajectory_max_results=settings.trajectory_context_max_results,
     )
-    runner = VisionAutonomousRunner(
-        vision_agent=agent,
-        on_run_update=_publish_autonomy_update,
-        trajectory_store=trajectory_store,
-    )
-    run = await runner.start(request)
+
+
+@router.post("/api/agent/run")
+async def run_vision_agent(request: AutonomyStartRequest) -> dict:
+    """Start a vision-based autonomous agent run via the collector bridge."""
+    if not bridge.connected:
+        raise HTTPException(status_code=503, detail="collector bridge not connected")
+
+    if not settings.vision_agent_enabled:
+        raise HTTPException(status_code=503, detail="vision agent disabled")
+
+    agent = _build_vision_agent(request.max_iterations or 0)
+    vision_runner.set_agent(agent)
+    run = await vision_runner.start(request)
     return {"run": _dump(run)}
 
 
@@ -184,26 +184,9 @@ async def chat_endpoint(request: ChatRequest) -> dict:
                 auto_approve_irreversible=False,
             )
             if bridge.connected and settings.vision_agent_enabled:
-                from ..vision_agent import VisionAgent
-
-                agent = VisionAgent(
-                    bridge=bridge,
-                    ollama=ollama,
-                    max_iterations=start_req.max_iterations,
-                    vision_model=settings.ollama_vision_model or None,
-                    min_confidence=settings.vision_agent_min_confidence,
-                    max_consecutive_errors=settings.vision_agent_max_consecutive_errors,
-                    error_backoff_ms=settings.vision_agent_error_backoff_ms,
-                    trajectory_store=trajectory_store,
-                    trajectory_max_chars=settings.trajectory_context_max_chars,
-                    trajectory_max_results=settings.trajectory_context_max_results,
-                )
-                runner = VisionAutonomousRunner(
-                    vision_agent=agent,
-                    on_run_update=_publish_autonomy_update,
-                    trajectory_store=trajectory_store,
-                )
-                run = await runner.start(start_req)
+                agent = _build_vision_agent(start_req.max_iterations)
+                vision_runner.set_agent(agent)
+                run = await vision_runner.start(start_req)
             else:
                 run = await autonomy.start(start_req)
             action_triggered = True

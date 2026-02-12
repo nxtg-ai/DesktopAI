@@ -1,3 +1,6 @@
+//! Network layer: WebSocket connection to backend, event sending, command receiving.
+//! Uses exponential backoff for reconnection and handles ping/pong keep-alive.
+
 use crossbeam_channel::Receiver;
 use std::time::{Duration, Instant};
 use tungstenite::{connect, Message};
@@ -6,6 +9,7 @@ use url::Url;
 use crate::config::Config;
 use crate::event::WindowEvent;
 
+/// Attempt a WebSocket connection to the given URL. Returns None on failure.
 pub fn connect_ws(url: &str) -> Option<tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>> {
     let parsed = Url::parse(url).ok()?;
     match connect(parsed) {
@@ -17,6 +21,7 @@ pub fn connect_ws(url: &str) -> Option<tungstenite::WebSocket<tungstenite::strea
     }
 }
 
+/// Send an event to the backend via HTTP POST (fallback when WebSocket is unavailable).
 pub fn send_http(url: &str, event: &WindowEvent) {
     let resp = ureq::post(url).send_json(event);
     if let Err(err) = resp {
@@ -29,6 +34,7 @@ pub fn calculate_backoff(current_ms: u64, max_ms: u64) -> u64 {
     (current_ms.saturating_mul(2)).min(max_ms)
 }
 
+/// Main network loop: sends events from the channel, receives commands, auto-reconnects.
 pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
     let mut ws = None;
     let mut last_attempt = Instant::now() - config.ws_retry;

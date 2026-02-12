@@ -1,8 +1,11 @@
+//! Desktop event types sent from the collector to the backend.
+
 use chrono::Utc;
 use serde::Serialize;
 use windows::core::BSTR;
 use windows::Win32::Foundation::HWND;
 
+/// A desktop event capturing a foreground window change or idle state transition.
 #[derive(Debug, Serialize, Clone)]
 pub struct WindowEvent {
     #[serde(rename = "type")]
@@ -21,6 +24,7 @@ pub struct WindowEvent {
     pub screenshot_b64: Option<String>,
 }
 
+/// A single UI Automation element in the accessibility tree.
 #[derive(Debug, Serialize, Clone, Default)]
 pub struct UiaElement {
     pub automation_id: String,
@@ -39,6 +43,7 @@ pub struct UiaElement {
     pub children: Vec<UiaElement>,
 }
 
+/// A snapshot of the UIA tree for the focused window, including the focused element and descendants.
 #[derive(Debug, Serialize, Clone, Default)]
 pub struct UiaSnapshot {
     pub focused_name: String,
@@ -49,10 +54,12 @@ pub struct UiaSnapshot {
     pub window_tree: Vec<UiaElement>,
 }
 
+/// Convert a window handle to a hex string for serialization.
 pub fn hwnd_to_hex(hwnd: HWND) -> String {
     format!("{:#x}", hwnd.0 as usize)
 }
 
+/// Build an idle/active activity event (no window context, just the state transition).
 pub fn build_activity_event(event_type: &str, idle_ms: u64) -> WindowEvent {
     WindowEvent {
         event_type: event_type.to_string(),

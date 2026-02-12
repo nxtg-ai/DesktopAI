@@ -90,7 +90,8 @@ cd collector && cargo test   # 70 Rust tests
 ```bash
 # Install Ollama for AI-powered responses
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.1:8b
+ollama pull qwen2.5:7b
+ollama pull qwen2.5vl:7b
 
 # Backend auto-detects Ollama at localhost:11434
 ```
@@ -306,13 +307,14 @@ make ui-test-headed                            # Watch the browser journey
 | `API_TOKEN` | *(empty)* | Bearer token (empty = no auth) |
 | `BACKEND_DB_PATH` | `backend/data/desktopai.db` | SQLite database path |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
-| `OLLAMA_MODEL` | `llama3.1:8b` | Default model |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | Default chat model |
+| `OLLAMA_VISION_MODEL` | `qwen2.5vl:7b` | Default vision model |
 | `ACTION_EXECUTOR_MODE` | `auto` | `auto` / `bridge` / `simulated` / `playwright` |
 | `RATE_LIMIT_PER_MINUTE` | `60` | API rate limit per IP |
 | `WS_MAX_CONNECTIONS` | `50` | Max WebSocket connections |
 | `COLLECTOR_HEARTBEAT_INTERVAL_S` | `30` | Heartbeat ping interval |
 | `NOTIFICATIONS_ENABLED` | `true` | Enable notification engine |
-| `AUTONOMY_PLANNER_MODE` | `deterministic` | `deterministic` / `auto` / `ollama_required` |
+| `AUTONOMY_PLANNER_MODE` | `auto` | `deterministic` / `auto` / `ollama_required` |
 
 </details>
 

@@ -1,6 +1,9 @@
+//! Configuration from environment variables with sensible defaults.
+
 use std::env;
 use std::time::Duration;
 
+/// Runtime configuration for the collector, loaded from environment variables.
 #[derive(Clone)]
 pub struct Config {
     pub ws_url: String,
@@ -71,6 +74,7 @@ impl Config {
     }
 }
 
+/// Parse a boolean from the environment (accepts 1/true/yes/on and 0/false/no/off).
 pub fn env_bool(name: &str, default: bool) -> bool {
     let raw = env::var(name).ok();
     match raw.as_deref().map(|v| v.trim().to_lowercase()) {

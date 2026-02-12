@@ -42,7 +42,7 @@ def _autonomy_planner_mode() -> str:
     # Backward compatibility: old bool flag maps to deterministic/auto.
     if _env_bool("AUTONOMY_PLANNER_USE_OLLAMA", False):
         return "auto"
-    return "deterministic"
+    return "auto"
 
 
 @dataclass(frozen=True)
@@ -62,8 +62,8 @@ class Settings:
 
     llm_provider: str = _env("LLM_PROVIDER", "ollama")
     ollama_url: str = _env("OLLAMA_URL", "http://localhost:11434")
-    ollama_model: str = _env("OLLAMA_MODEL", "llama3.1:8b")
-    ollama_vision_model: str = _env("OLLAMA_VISION_MODEL", "")
+    ollama_model: str = _env("OLLAMA_MODEL", "qwen2.5:7b")
+    ollama_vision_model: str = _env("OLLAMA_VISION_MODEL", "qwen2.5vl:7b")
     ollama_classifier_model: str = _env("OLLAMA_CLASSIFIER_MODEL", "")
     ollama_planner_model: str = _env("OLLAMA_PLANNER_MODEL", "")
     ollama_executor_model: str = _env("OLLAMA_EXECUTOR_MODEL", "")

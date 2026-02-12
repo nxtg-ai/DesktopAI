@@ -1176,3 +1176,30 @@ def test_ui_telemetry_sessions_include_artifact_only_sessions():
     assert sessions.status_code == 200
     payload = sessions.json()["sessions"]
     assert any(item["session_id"] == session_id for item in payload)
+
+
+def test_cancel_all_autonomy_runs():
+    _reset_runtime()
+    # Start two runs
+    resp1 = client.post(
+        "/api/autonomy/runs",
+        json={"objective": "Task A", "max_iterations": 24},
+    )
+    assert resp1.status_code == 200
+    resp2 = client.post(
+        "/api/autonomy/runs",
+        json={"objective": "Task B", "max_iterations": 24},
+    )
+    assert resp2.status_code == 200
+
+    # Wait for both to reach waiting_approval (deterministic planner generates
+    # irreversible steps that need approval)
+    _wait_for_run_status(resp1.json()["run"]["run_id"], {"waiting_approval", "running", "completed"})
+    _wait_for_run_status(resp2.json()["run"]["run_id"], {"waiting_approval", "running", "completed"})
+
+    # Cancel all
+    cancel_resp = client.post("/api/autonomy/cancel-all")
+    assert cancel_resp.status_code == 200
+    data = cancel_resp.json()
+    assert isinstance(data["cancelled"], int)
+    assert isinstance(data["runs"], list)

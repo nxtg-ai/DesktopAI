@@ -1,3 +1,5 @@
+//! Idle detection: polls GetLastInputInfo to detect user idle/active transitions.
+
 use crossbeam_channel::Sender;
 use std::thread;
 
