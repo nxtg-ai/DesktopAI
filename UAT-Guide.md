@@ -6,34 +6,204 @@
 
 ---
 
-## Prerequisites Checklist
+## Startup Protocol (Clean Slate)
 
-Before testing, confirm the stack is running:
+Follow these steps **in order**. Each step depends on the previous one.
 
-```bash
-# 1. Ollama running with models pulled
-ollama list   # Expect: qwen2.5:7b, qwen2.5vl:7b
+### Step 0: Kill Everything Stale
 
-# 2. Start the backend (from WSL2)
-cd /home/axw/projects/DesktopAI
-source .venv/bin/activate
-uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+Run these from **Windows PowerShell** (Admin recommended):
 
-# 3. Start the collector (from Windows)
-C:\temp\desktopai\desktopai-collector.exe
+```powershell
+# Kill any running collector
+taskkill /IM desktopai-collector.exe /F 2>$null
 
-# 4. Open the Tauri app OR the web UI
-#    Web UI: http://localhost:8000/
-#    Tauri:  cargo tauri dev  (from tauri-app/)
+# Kill any stale Ollama (if it's hanging)
+taskkill /IM ollama.exe /F 2>$null
 ```
 
-**Verification:**
-- [ ] Backend is running at http://localhost:8000
-- [ ] `GET http://localhost:8000/api/readiness/status` returns `{"ok": true}`
-- [ ] Ollama is accessible at http://localhost:11434
-- [ ] Collector is connected (check `GET http://localhost:8000/api/agent/bridge`)
+Run these from **WSL2 terminal**:
 
-**Feedback:**
+```bash
+# Kill any running backend
+pkill -f "uvicorn app.main" 2>/dev/null
+
+# Kill any orphan Python processes from previous sessions
+pkill -f "python.*backend" 2>/dev/null
+
+# Verify nothing is holding port 8000
+lsof -i :8000 2>/dev/null && echo "WARNING: port 8000 still in use" || echo "Port 8000 is free"
+```
+
+- [ ] No stale processes running
+- [ ] Port 8000 is free
+
+### Step 1: Start Ollama (Windows)
+
+Ollama runs natively on Windows. Open a **Windows terminal**:
+
+```powershell
+# Start Ollama service (if not already running as a service)
+ollama serve
+```
+
+> If Ollama is installed as a Windows service, it may already be running.
+> Check by opening a new terminal and running `ollama list`.
+
+Then verify and pull models if needed:
+
+```powershell
+# Check available models
+ollama list
+
+# If models are missing, pull them (one-time, ~4GB each):
+ollama pull qwen2.5:7b
+ollama pull qwen2.5vl:7b
+```
+
+**How to know it's working:**
+```powershell
+# This should return a JSON response, not an error:
+curl http://localhost:11434/api/tags
+```
+
+- [ ] `ollama list` shows `qwen2.5:7b` and `qwen2.5vl:7b`
+- [ ] `http://localhost:11434` is reachable
+
+### Step 2: Start the Backend (WSL2)
+
+Open a **WSL2 terminal** (keep it open — this is the backend process):
+
+```bash
+cd /home/axw/projects/DesktopAI
+source .venv/bin/activate
+
+# Start the backend (stays in foreground, shows live logs)
+uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+```
+
+> **Tip:** `--host 0.0.0.0` is important so the Windows collector can reach it.
+> You'll see log lines as events come in. Leave this terminal open.
+
+**How to know it's working:**
+
+Open a **second WSL2 terminal** (or browser on Windows):
+
+```bash
+# Quick health check
+curl -s http://localhost:8000/api/readiness/status | python3 -m json.tool
+```
+
+You should see `"ok": true` (or false with specific check failures listed).
+
+- [ ] Backend is running (logs streaming in terminal)
+- [ ] `GET http://localhost:8000/api/readiness/status` returns JSON
+
+### Step 3: Start the Collector (Windows)
+
+Open a **Windows terminal** (keep it open — shows collector logs):
+
+```powershell
+C:\temp\desktopai\desktopai-collector.exe
+```
+
+> The collector connects to the backend via WebSocket at `ws://localhost:8000/ingest`.
+> You should see connection logs in both the collector terminal AND the backend terminal.
+
+**How to know it's working:**
+
+```powershell
+# From Windows browser or PowerShell:
+curl http://localhost:8000/api/agent/bridge
+```
+
+Should return: `{"connected": true}`
+
+Also check: switch between a few apps on Windows, then:
+
+```powershell
+curl http://localhost:8000/api/state/snapshot
+```
+
+Should show the current foreground window title and process name.
+
+- [ ] Collector terminal shows "connected" / no errors
+- [ ] `GET /api/agent/bridge` returns `{"connected": true}`
+- [ ] `GET /api/state/snapshot` shows your current Windows app
+
+### Step 4: Open the UI
+
+Pick one (or test both):
+
+**Option A — Web UI (easiest):**
+Open in Windows browser: `http://localhost:8000/`
+
+**Option B — Tauri Desktop App:**
+```bash
+# From WSL2, in a new terminal:
+cd /home/axw/projects/DesktopAI/tauri-app
+cargo tauri dev
+```
+
+> The Tauri app is a floating avatar window. It should show a status dot
+> and "connecting" → "connected" when the backend is reachable.
+
+- [ ] UI is visible and responsive
+- [ ] Chat input is usable
+- [ ] Status shows "connected"
+
+### Step 5: Verify the Full Stack
+
+Run this quick smoke test to confirm everything is wired together:
+
+```bash
+# From WSL2 or Windows — send a test chat message
+curl -s -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What app am I using right now?", "allow_actions": false}' \
+  | python3 -m json.tool
+```
+
+**Expected response contains:**
+- `"response"`: An AI-generated answer mentioning your current Windows app
+- `"source"`: `"ollama"` (if Ollama is running) or `"context"` (if not)
+- `"desktop_context"`: Shows `window_title` and `process_exe`
+- `"conversation_id"`: A UUID string
+
+- [ ] Response includes correct desktop context
+- [ ] Source is "ollama" (AI-powered response)
+- [ ] No errors in any terminal
+
+### Startup Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Backend won't start, "port in use" | Stale process | `lsof -i :8000` then `kill <PID>` |
+| Collector shows "connection refused" | Backend not running | Start backend first (Step 2) |
+| Bridge shows `connected: false` | Collector not running or crashed | Check collector terminal, restart it |
+| Chat returns `source: context` | Ollama is down or model missing | Run `ollama list`, restart Ollama |
+| Chat returns generic response, no app info | Collector not connected | Check bridge status, restart collector |
+| Tauri shows "connecting" forever | Backend unreachable from Windows | Check `--host 0.0.0.0`, try `curl http://localhost:8000/` from Windows |
+| `ollama pull` hangs | Network issue or disk full | Check disk space, try `ollama pull` again |
+| Models not found after pull | Wrong model name | Use exactly `qwen2.5:7b` and `qwen2.5vl:7b` |
+
+### Terminal Layout (Recommended)
+
+Keep 3 terminals open during testing:
+
+```
++---------------------------+---------------------------+
+|    WSL2 Terminal 1        |    WSL2 Terminal 2        |
+|    (Backend - uvicorn)    |    (Ad-hoc curl/testing)  |
+|    Leave running          |    Use for API calls      |
++---------------------------+---------------------------+
+|    Windows Terminal                                    |
+|    (Collector - desktopai-collector.exe)               |
+|    Leave running                                       |
++-------------------------------------------------------+
+```
+
+**Feedback on startup process:**
 ```
 _____________________________________________________________________
 _____________________________________________________________________
