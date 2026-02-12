@@ -5,9 +5,26 @@ import {
   autonomyParallelAgentsEl, autonomyLevelEl, autonomyStartBtn, autonomyApproveBtn,
   autonomyCancelBtn, autonomyRunMetaEl, autonomyLogEl, readinessGateBtn,
   readinessGateResultEl, readinessMatrixObjectivesEl, readinessMatrixBtn,
-  readinessMatrixResultEl, readinessMatrixResultsEl, formatTime,
+  readinessMatrixResultEl, readinessMatrixResultsEl, promotionStatusBadgeEl, formatTime,
 } from "./state.js";
 import { queueTelemetry } from "./telemetry.js";
+
+export async function fetchPromotionStatus() {
+  if (!promotionStatusBadgeEl) return;
+  try {
+    const resp = await fetch("/api/autonomy/promotion");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const current = data.current_level || "supervised";
+    const recommended = data.recommended_level || "supervised";
+    const successes = data.consecutive_successes || 0;
+    if (current === recommended) {
+      promotionStatusBadgeEl.textContent = current;
+    } else {
+      promotionStatusBadgeEl.textContent = `${successes}/5 to ${recommended}`;
+    }
+  } catch { /* ignore */ }
+}
 
 function setAutonomyStatus(status) {
   autonomyStatusEl.textContent = status || "idle";

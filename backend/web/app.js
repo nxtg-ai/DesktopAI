@@ -36,14 +36,14 @@ import {
 
 import {
   startAutonomyRun, approveAutonomyRun, cancelAutonomyRun,
-  runReadinessGateFromUi, runReadinessMatrixFromUi,
+  runReadinessGateFromUi, runReadinessMatrixFromUi, fetchPromotionStatus,
 } from "./modules/autonomy.js";
 
 import {
   setVoiceState, speakText, stopMeterLoop, ensureMicrophone, setupSpeechRecognition,
 } from "./modules/voice.js";
 
-import { sendChatMessage, startNewChat, refreshRecipeSuggestions } from "./modules/chat.js";
+import { sendChatMessage, startNewChat, refreshRecipeSuggestions, fetchPersonalityStatus } from "./modules/chat.js";
 import { refreshAgentVision } from "./modules/agent-vision.js";
 import { refreshNotificationCount } from "./modules/notifications.js";
 import { initShortcuts } from "./modules/shortcuts.js";
@@ -245,4 +245,6 @@ refreshReadinessStatus();
 refreshAgentVision();
 refreshNotificationCount();
 refreshRecipeSuggestions();
+fetchPersonalityStatus();
+fetchPromotionStatus();
 startJourneyPolling();

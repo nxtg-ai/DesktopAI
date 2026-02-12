@@ -92,6 +92,8 @@ export const visionTimestampEl = document.getElementById("vision-timestamp");
 export const visionUiaTextEl = document.getElementById("vision-uia-text");
 export const visionScreenshotStatusEl = document.getElementById("vision-screenshot-status");
 export const visionRefreshBtn = document.getElementById("vision-refresh-btn");
+export const personalityEnergyBadgeEl = document.getElementById("personality-energy-badge");
+export const promotionStatusBadgeEl = document.getElementById("promotion-status-badge");
 
 // ── Avatar ──
 

@@ -3,7 +3,8 @@
 import { appState, statusEl, collectorStatusEl, avatar, MAX_EVENTS } from "./state.js";
 import { queueTelemetry } from "./telemetry.js";
 import { renderEvents, updateCurrent } from "./events.js";
-import { applyRunUiState } from "./autonomy.js";
+import { applyRunUiState, fetchPromotionStatus } from "./autonomy.js";
+import { fetchPersonalityStatus } from "./chat.js";
 import { refreshAgentVision } from "./agent-vision.js";
 import { handleNotificationWsMessage } from "./notifications.js";
 
@@ -53,6 +54,8 @@ export function connectWs() {
   appState.ws.onopen = () => {
     setStatus("live", "good");
     queueTelemetry("ws_open", "ui websocket connected");
+    void fetchPersonalityStatus();
+    void fetchPromotionStatus();
   };
   appState.ws.onmessage = (message) => {
     try {
@@ -79,6 +82,7 @@ export function connectWs() {
       }
       if (payload.type === "autonomy_run" && payload.run) {
         if (!appState.activeRunId || payload.run.run_id === appState.activeRunId) applyRunUiState(payload.run);
+        if (["completed", "failed", "cancelled"].includes(payload.run.status)) void fetchPromotionStatus();
       }
       if (payload.type === "notification" && payload.notification) {
         handleNotificationWsMessage(payload.notification);

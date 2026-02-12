@@ -1021,6 +1021,25 @@ h1 {
   }
 }
 
+/* ── Status Badges (personality energy, promotion) ── */
+.status-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--card);
+  margin-left: 6px;
+  opacity: 0.8;
+}
+.status-badge.calm { color: #6ecf9a; }
+.status-badge.active { color: #f0c674; }
+.status-badge.urgent { color: #e06c75; }
+
+.chat-badge.personality {
+  background: rgba(110, 207, 154, 0.15);
+  color: #6ecf9a;
+}
+
 /* ── Keyboard Shortcut Hint ── */
 .kbd-hint {
   font-size: 10px;

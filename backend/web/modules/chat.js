@@ -2,7 +2,7 @@
 
 import {
   appState, chatStatusEl, chatContextIndicatorEl, chatMessagesEl, chatWelcomeEl,
-  chatInputEl, chatSendBtn, personalityModeEl, formatTime,
+  chatInputEl, chatSendBtn, personalityModeEl, personalityEnergyBadgeEl, formatTime,
 } from "./state.js";
 import { queueTelemetry } from "./telemetry.js";
 
@@ -21,6 +21,12 @@ function appendChatMessage(role, text, meta = {}) {
       const badge = document.createElement("span");
       badge.className = "chat-badge source";
       badge.textContent = meta.source;
+      badges.appendChild(badge);
+    }
+    if (meta.personality_mode) {
+      const badge = document.createElement("span");
+      badge.className = "chat-badge personality";
+      badge.textContent = meta.personality_mode;
       badges.appendChild(badge);
     }
     if (meta.action_triggered) {
@@ -95,6 +101,18 @@ export function startNewChat() {
   queueTelemetry("chat_new", "new chat started");
 }
 
+export async function fetchPersonalityStatus() {
+  if (!personalityEnergyBadgeEl) return;
+  try {
+    const resp = await fetch("/api/personality");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const energy = data.energy || "calm";
+    personalityEnergyBadgeEl.textContent = energy;
+    personalityEnergyBadgeEl.className = `status-badge ${energy}`;
+  } catch { /* ignore */ }
+}
+
 export async function sendChatMessage(text) {
   const message = (text || "").trim();
   if (!message || appState.chatSending) return;
@@ -129,7 +147,7 @@ export async function sendChatMessage(text) {
         titleEl.dataset.set = "1";
       }
     }
-    appendChatMessage("agent", data.response, { source: data.source, action_triggered: data.action_triggered, run_id: data.run_id });
+    appendChatMessage("agent", data.response, { source: data.source, action_triggered: data.action_triggered, run_id: data.run_id, personality_mode: data.personality_mode });
     chatStatusEl.textContent = "ready";
     chatStatusEl.dataset.tone = "good";
     if (data.desktop_context) updateChatContextBar(data.desktop_context);
