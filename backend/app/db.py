@@ -315,6 +315,37 @@ class EventDatabase:
             items.append(AutonomyRunRecord.model_validate(payload))
         return items
 
+    async def recent_autonomy_outcomes(self, limit: int = 20) -> list[dict]:
+        """Fetch recent terminal autonomy runs for promotion analysis."""
+        return await asyncio.to_thread(self._recent_autonomy_outcomes, limit)
+
+    def _recent_autonomy_outcomes(self, limit: int) -> list[dict]:
+        if limit <= 0:
+            return []
+        with self._lock:
+            cur = self._conn.cursor()
+            rows = cur.execute(
+                """
+                SELECT payload_json
+                FROM autonomy_runs
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (limit * 2,),  # fetch extra to filter terminal statuses
+            ).fetchall()
+        results: list[dict] = []
+        terminal = {"completed", "failed", "cancelled"}
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            if payload.get("status") in terminal:
+                results.append({
+                    "autonomy_level": payload.get("autonomy_level", "supervised"),
+                    "status": payload["status"],
+                })
+                if len(results) >= limit:
+                    break
+        return results
+
     async def upsert_task_record(self, task: TaskRecord) -> None:
         await asyncio.to_thread(self._upsert_task_record, task)
 

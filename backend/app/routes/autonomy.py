@@ -15,6 +15,7 @@ from ..deps import (
     _dump,
     _planner_status_payload,
     autonomy,
+    autonomy_promoter,
     db,
     planner,
     tasks,
@@ -41,9 +42,27 @@ def _autonomy_http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=409, detail=message)
 
 
+@router.get("/api/autonomy/promotion")
+async def get_autonomy_promotion_status() -> dict:
+    """Return current autonomy promotion state and recommendation."""
+    recent_runs = await db.recent_autonomy_outcomes(limit=20)
+    result = autonomy_promoter.recommend(recent_runs)
+    result["auto_promote_enabled"] = settings.autonomy_auto_promote
+    return result
+
+
 @router.post("/api/autonomy/runs")
 async def start_autonomy_run(request: AutonomyStartRequest) -> dict:
     """Start a new autonomous task execution run."""
+    # Auto-promote if enabled and no explicit level override
+    if settings.autonomy_auto_promote and request.autonomy_level == "supervised":
+        recent_runs = await db.recent_autonomy_outcomes(limit=20)
+        recommendation = autonomy_promoter.recommend(recent_runs)
+        promoted_level = recommendation["recommended_level"]
+        if promoted_level != "supervised":
+            request = request.model_copy(
+                update={"autonomy_level": promoted_level}
+            )
     try:
         run = await autonomy.start(request)
     except Exception as exc:

@@ -12,6 +12,7 @@ from fastapi.encoders import jsonable_encoder
 
 from .action_executor import build_action_executor
 from .autonomy import AutonomousRunner
+from .autonomy_promoter import AutonomyPromoter
 from .bridge import CommandBridge
 from .chat_memory import ChatMemoryStore
 from .classifier import ActivityClassifier
@@ -103,6 +104,7 @@ notification_engine = NotificationEngine(
     idle_threshold_s=settings.notification_idle_threshold_s,
 )
 personality_adapter = PersonalityAdapter()
+autonomy_promoter = AutonomyPromoter()
 classifier = ActivityClassifier(
     ollama,
     default_category=settings.classifier_default,
