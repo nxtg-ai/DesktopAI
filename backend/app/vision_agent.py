@@ -39,10 +39,12 @@ Process: {process_exe}
 RULES:
 1. Respond with ONLY a JSON object. No markdown, no explanation.
 2. Each action should move you closer to the objective.
-3. Use "done" when the objective is complete.
+3. IMPORTANT: After each action, check if the objective has ALREADY been achieved. If yes, respond with action "done".
 4. Use "wait" if you need the UI to settle after a previous action.
 5. If stuck after 3 attempts, try a different approach.
 6. Include a "confidence" field (0.0 to 1.0) indicating how sure you are this action is correct.
+7. Do NOT repeat the same action more than twice. If the objective appears achieved, use "done".
+8. IMPORTANT: Before typing text, ALWAYS use "focus_window" first to ensure the correct window has focus. Never type_text without first confirming the target window is focused.
 
 Your action:"""
 
@@ -133,7 +135,34 @@ class VisionAgent:
             except Exception as exc:
                 logger.warning("VisionAgent: trajectory lookup failed: %s", exc)
 
+        _repeat_threshold = 3
+
         for _ in range(self._max_iterations):
+            # Auto-done: if the same action has been repeated _repeat_threshold times
+            if len(steps) >= _repeat_threshold:
+                recent = steps[-_repeat_threshold:]
+                actions = [s.action.action for s in recent]
+                if len(set(actions)) == 1 and actions[0] not in ("wait", "done", "observe"):
+                    logger.info(
+                        "VisionAgent: action '%s' repeated %d times, auto-completing",
+                        actions[0], _repeat_threshold,
+                    )
+                    done_action = AgentAction(
+                        action="done",
+                        parameters={},
+                        reasoning=f"Auto-done: '{actions[0]}' repeated {_repeat_threshold} times — objective likely achieved or stuck",
+                        confidence=0.7,
+                    )
+                    done_step = AgentStep(
+                        observation=steps[-1].observation,
+                        action=done_action,
+                        result={"status": "completed", "reasoning": done_action.reasoning},
+                    )
+                    steps.append(done_step)
+                    if on_step:
+                        on_step(done_step)
+                    break
+
             observation = await self._observe()
             action = await self._reason(objective, observation, steps, trajectory_context=trajectory_context)
 

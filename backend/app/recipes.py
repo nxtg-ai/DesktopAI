@@ -28,7 +28,7 @@ BUILTIN_RECIPES: List[Recipe] = [
             {"action": "send_keys", "params": {"keys": "{TAB}{ENTER}"}},
         ],
         context_patterns=[r"(?i)outlook|thunderbird|mail"],
-        keywords=["reply", "draft reply", "respond"],
+        keywords=["reply", "draft reply", "respond", "draft", "email reply"],
     ),
     Recipe(
         recipe_id="summarize_document",

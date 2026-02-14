@@ -598,8 +598,8 @@ h1 {
 }
 
 .chat-msg.agent .chat-msg-bubble {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid var(--stroke);
+  background: rgba(15, 139, 141, 0.08);
+  border: 1px solid rgba(15, 139, 141, 0.18);
   border-bottom-left-radius: 4px;
 }
 
@@ -641,12 +641,17 @@ h1 {
   align-self: flex-start;
   padding: 10px 14px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid var(--stroke);
+  background: rgba(15, 139, 141, 0.08);
+  border: 1px solid rgba(15, 139, 141, 0.18);
   border-bottom-left-radius: 4px;
   font-size: 14px;
   color: var(--muted);
-  animation: slideIn 0.3s ease;
+  animation: slideIn 0.3s ease, typing-glow 2s ease-in-out infinite;
+}
+
+@keyframes typing-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(15, 139, 141, 0.15); }
+  50% { box-shadow: 0 0 12px rgba(15, 139, 141, 0.35); }
 }
 
 .chat-typing-dots {
@@ -895,8 +900,8 @@ h1 {
   }
 
   .chat-msg.agent .chat-msg-bubble {
-    background: rgba(30, 33, 45, 0.9);
-    border-color: var(--stroke);
+    background: rgba(15, 139, 141, 0.1);
+    border-color: rgba(15, 139, 141, 0.2);
     color: var(--ink);
   }
 

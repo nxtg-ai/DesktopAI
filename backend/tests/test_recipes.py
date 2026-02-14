@@ -59,6 +59,18 @@ def test_match_recipe_by_keywords():
     assert recipe.recipe_id == "reply_to_email"
 
 
+def test_match_recipe_uat_phrases():
+    """UAT phrases that must all match reply_to_email."""
+    for phrase in [
+        "draft a reply to this email",
+        "reply to this email",
+        "Draft email reply",
+    ]:
+        recipe = match_recipe_by_keywords(phrase)
+        assert recipe is not None, f"Failed to match: {phrase!r}"
+        assert recipe.recipe_id == "reply_to_email"
+
+
 def test_no_keyword_match():
     recipe = match_recipe_by_keywords("what is the weather today?")
     assert recipe is None

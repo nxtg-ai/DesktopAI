@@ -93,11 +93,41 @@ export async function refreshRecipeSuggestions() {
 
 export function startNewChat() {
   appState.conversationId = null;
-  chatMessagesEl.innerHTML = "";
-  if (chatWelcomeEl) chatWelcomeEl.style.display = "";
+  // Remove all children except the welcome div, then re-show it
+  const children = Array.from(chatMessagesEl.children);
+  for (const child of children) {
+    if (child.id !== "chat-welcome") child.remove();
+  }
+  if (chatWelcomeEl && chatMessagesEl.contains(chatWelcomeEl)) {
+    chatWelcomeEl.style.display = "";
+  } else {
+    // Welcome was destroyed — recreate it
+    const welcome = document.createElement("div");
+    welcome.className = "chat-welcome";
+    welcome.id = "chat-welcome";
+    welcome.innerHTML = `
+      <p>Ask me anything about your desktop, or tell me to do something.</p>
+      <div class="chat-suggestions">
+        <button class="chat-suggestion" data-message="What am I working on?">What am I working on?</button>
+        <button class="chat-suggestion" data-message="Summarize my current activity">Summarize my activity</button>
+        <button class="chat-suggestion" data-message="Draft a reply to this email">Draft email reply</button>
+        <button class="chat-suggestion" data-message="Open Notepad and write a meeting summary">Open Notepad</button>
+      </div>`;
+    welcome.querySelectorAll(".chat-suggestion").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const msg = btn.dataset.message || btn.textContent;
+        chatInputEl.value = msg;
+        void sendChatMessage(msg);
+      });
+    });
+    chatMessagesEl.appendChild(welcome);
+  }
   chatInputEl.value = "";
   const titleEl = document.getElementById("chat-conversation-title");
-  if (titleEl) titleEl.textContent = "New Conversation";
+  if (titleEl) {
+    titleEl.textContent = "New Conversation";
+    delete titleEl.dataset.set;
+  }
   queueTelemetry("chat_new", "new chat started");
 }
 

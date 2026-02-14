@@ -269,3 +269,75 @@ async def test_chat_omits_screenshot_when_unavailable(client):
     assert resp.status_code == 200
     data = resp.json()
     assert "screenshot_b64" not in data
+
+
+@pytest.mark.anyio
+async def test_chat_scroll_triggers_action(client):
+    """'scroll down' should be detected as an action intent."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "scroll down in Notepad", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("action_triggered") is True
+
+
+def test_personality_prompts_copilot_concise():
+    """Copilot prompt should instruct brevity."""
+    from app.routes.agent import _PERSONALITY_PROMPTS
+
+    prompt = _PERSONALITY_PROMPTS["copilot"]
+    assert "concise" in prompt.lower()
+    assert "bullet" in prompt.lower()
+
+
+def test_personality_prompts_operator_no_greetings():
+    """Operator prompt should forbid greetings and pleasantries."""
+    from app.routes.agent import _PERSONALITY_PROMPTS
+
+    prompt = _PERSONALITY_PROMPTS["operator"]
+    assert "pleasantries" in prompt.lower()
+    assert "imperative" in prompt.lower()
+
+
+@pytest.mark.anyio
+async def test_chat_system_prompt_includes_recent_apps(client):
+    """LLM system prompt should include recent app transitions."""
+    from app.schemas import WindowEvent
+
+    # Seed two events: user was in Notepad, then switched to browser
+    e1 = WindowEvent(
+        type="foreground", hwnd="0x1", title="Untitled - Notepad",
+        process_exe="notepad.exe", pid=100,
+        timestamp=datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+    )
+    e2 = WindowEvent(
+        type="foreground", hwnd="0x2", title="DesktopAI Live Context",
+        process_exe="chrome.exe", pid=200,
+        timestamp=datetime(2025, 1, 1, 0, 1, 0, tzinfo=timezone.utc),
+    )
+    await store.record(e1)
+    await store.record(e2)
+
+    captured_messages = []
+
+    async def mock_chat(messages, **kwargs):
+        captured_messages.extend(messages)
+        return "I can see your apps."
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", side_effect=mock_chat):
+        resp = await client.post("/api/chat", json={"message": "what am I doing?"})
+
+    assert resp.status_code == 200
+    # Check that the system prompt mentions notepad
+    system_msgs = [m for m in captured_messages if m.get("role") == "system"]
+    assert len(system_msgs) >= 1
+    system_text = system_msgs[0]["content"].lower()
+    assert "notepad" in system_text

@@ -114,11 +114,17 @@ You should see `"ok": true` (or false with specific check failures listed).
 
 ### Step 3: Start the Collector (Windows)
 
-Open a **Windows terminal** (keep it open — shows collector logs):
+Open a **Windows terminal** (keep it open — shows collector logs).
+
+**Enable screenshots and UIA** (required for Agent Vision / autonomous actions):
 
 ```powershell
+$env:ENABLE_SCREENSHOT="true"
+$env:UIA_ENABLED="true"
 C:\temp\desktopai\desktopai-collector.exe
 ```
+
+> Without these env vars, Agent Vision will show "Screenshot: unavailable" and "No UIA data".
 
 > The collector connects to the backend via WebSocket at `ws://localhost:8000/ingest`.
 > You should see connection logs in both the collector terminal AND the backend terminal.

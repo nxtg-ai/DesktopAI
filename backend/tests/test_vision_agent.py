@@ -298,3 +298,39 @@ async def test_no_trajectory_store_still_works(mock_bridge, mock_ollama):
     steps = await agent.run("open notepad")
     assert len(steps) == 1
     assert steps[0].action.action == "done"
+
+
+@pytest.mark.asyncio
+async def test_repeated_action_triggers_auto_done(mock_bridge, mock_ollama):
+    """Agent auto-completes when the same action is repeated 3 times."""
+    mock_bridge.execute.return_value = {
+        "ok": True,
+        "result": {"window_title": "Test", "process_exe": "test.exe"},
+    }
+    # VLM keeps returning the same open_application action
+    mock_ollama.chat.return_value = json.dumps({
+        "action": "open_application",
+        "parameters": {"application": "notepad.exe"},
+        "reasoning": "opening notepad",
+        "confidence": 0.9,
+    })
+
+    agent = VisionAgent(
+        bridge=mock_bridge, ollama=mock_ollama, max_iterations=10,
+    )
+    steps = await agent.run("open notepad")
+
+    # Should auto-done after 3 repeats (3 actions + 1 auto-done = 4 steps)
+    assert len(steps) == 4
+    assert steps[-1].action.action == "done"
+    assert "repeated" in steps[-1].action.reasoning.lower() or "auto" in steps[-1].action.reasoning.lower()
+
+
+def test_prompt_includes_focus_before_type_rule():
+    """VisionAgent prompt instructs focus_window before type_text."""
+    from app.vision_agent import VISION_AGENT_PROMPT
+
+    prompt_lower = VISION_AGENT_PROMPT.lower()
+    assert "focus_window" in prompt_lower
+    assert "type_text" in prompt_lower or "typing" in prompt_lower
+    assert "focus" in prompt_lower and "before" in prompt_lower

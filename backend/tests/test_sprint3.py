@@ -200,7 +200,7 @@ def test_personality_prompts_defined():
     assert "operator" in _PERSONALITY_PROMPTS
     assert "concise" in _PERSONALITY_PROMPTS["copilot"].lower()
     assert "friendly" in _PERSONALITY_PROMPTS["assistant"].lower()
-    assert "minimal" in _PERSONALITY_PROMPTS["operator"].lower()
+    assert "imperative" in _PERSONALITY_PROMPTS["operator"].lower()
 
 
 def test_action_intent_detection():

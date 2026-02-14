@@ -28,14 +28,15 @@ router = APIRouter()
 _ACTION_KEYWORDS = {
     "draft", "reply", "send", "open", "type", "search", "click",
     "launch", "compose", "write", "submit", "delete", "forward",
-    "close", "switch",
+    "close", "switch", "scroll", "focus", "observe",
 }
 
 _PERSONALITY_PROMPTS = {
     "copilot": (
         "You are DesktopAI in co-pilot mode. Be concise and technical. "
         "Use jargon freely. Focus on code, workflows, and productivity. "
-        "Skip pleasantries — the user is in flow state."
+        "Skip pleasantries — the user is in flow state. "
+        "Maximum 3-5 bullet points. Skip explanations unless asked."
     ),
     "assistant": (
         "You are DesktopAI, an intelligent desktop assistant. "
@@ -43,9 +44,10 @@ _PERSONALITY_PROMPTS = {
         "Respond concisely and helpfully."
     ),
     "operator": (
-        "You are DesktopAI in operator mode. Be minimal and action-focused. "
-        "Treat every message as a potential command. Execute first, explain only if asked. "
-        "No small talk."
+        "You are DesktopAI in operator mode. "
+        "Never use greetings or pleasantries. Start with the action. "
+        "Use imperative sentences only. Maximum 2-3 sentences. "
+        "Treat every message as a command. Execute first, explain only if asked."
     ),
 }
 
@@ -219,6 +221,22 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         ]
         if ctx:
             system_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
+        # Include recent app transitions so LLM knows what user was doing
+        _, recent_events = await store.snapshot()
+        if recent_events:
+            seen = set()
+            recent_apps = []
+            for ev in reversed(recent_events[-10:]):
+                key = f"{ev.process_exe}|{ev.title}"
+                if key not in seen:
+                    seen.add(key)
+                    recent_apps.append(f"{ev.process_exe}: {ev.title}")
+                if len(recent_apps) >= 5:
+                    break
+            if recent_apps:
+                system_parts.append(
+                    "\nRecent apps (most recent first): " + "; ".join(recent_apps)
+                )
         if session.get("app_switches", 0) > 0:
             top = ", ".join(
                 f"{a['process']} ({a['dwell_s']}s)"
