@@ -28,3 +28,29 @@ DesktopAI.v2.R2/
 # Private vision docs
 myVISION.md
 BACKLOG.md
+SOTA-PROMPT.md
+
+# Claude Code session artifacts
+.claude/plans/
+.claude/checkpoints/
+.claude/claudio-mission-0[1-4]*.md
+.claude/gap_analysis*.txt
+
+# NXTG-Forge / plugin caches
+.agents/
+
+# Playwright MCP logs
+.playwright-mcp/
+
+# Dev tools (cockpit, etc.)
+tools/
+
+# Tauri generated files
+tauri-app/src-tauri/gen/
+tauri-app/src-tauri/.claude/
+
+# Runtime databases (not in backend/data/)
+backend/app/events.db
+
+# UI screenshots (large PNGs — keep SVGs)
+docs/assets/*.png
