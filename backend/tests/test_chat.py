@@ -436,18 +436,18 @@ async def test_direct_scroll(client):
 
 @pytest.mark.anyio
 async def test_direct_falls_through_to_vision(client):
-    """'click the submit button' should NOT match direct patterns — goes to VisionAgent."""
+    """Ambiguous visual task should NOT match direct patterns — goes to VisionAgent."""
     ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
     with ws_patch, exec_patch, \
          patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
         resp = await client.post(
             "/api/chat",
-            json={"message": "click the submit button", "allow_actions": True},
+            json={"message": "find the search box and type hello", "allow_actions": True},
         )
 
     assert resp.status_code == 200
     data = resp.json()
-    # Falls through to VisionAgent (async) → has a run_id
+    # No direct match → falls through to VisionAgent (async) → has a run_id
     assert data["action_triggered"] is True
     assert data.get("run_id") is not None
 
@@ -469,3 +469,76 @@ async def test_direct_no_bridge_falls_through(client):
     # Falls through to VisionAgent/autonomy since bridge is disconnected
     assert data["action_triggered"] is True
     assert data.get("run_id") is not None
+
+
+@pytest.mark.anyio
+async def test_direct_click_by_name(client):
+    """'click Save' should call click with UIA name resolution."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "click Save", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    assert data["source"] == "direct"
+    mock_exec.assert_called_once_with(
+        "click", {"name": "Save"}, timeout_s=5,
+    )
+
+
+@pytest.mark.anyio
+async def test_direct_click_natural_phrasing(client):
+    """'click on the File menu' should strip filler words."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "click on the File menu", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    mock_exec.assert_called_once_with(
+        "click", {"name": "File menu"}, timeout_s=5,
+    )
+
+
+@pytest.mark.anyio
+async def test_direct_double_click(client):
+    """'double click Document.docx' should call double_click."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "double click Document.docx", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    mock_exec.assert_called_once_with(
+        "double_click", {"name": "Document.docx"}, timeout_s=5,
+    )
+
+
+@pytest.mark.anyio
+async def test_direct_right_click(client):
+    """'right-click Desktop' should call right_click."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "right-click Desktop", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    mock_exec.assert_called_once_with(
+        "right_click", {"name": "Desktop"}, timeout_s=5,
+    )

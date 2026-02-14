@@ -70,6 +70,14 @@ _DIRECT_PATTERNS: list[tuple[re.Pattern, str, Callable[[re.Match], dict[str, Any
      "scroll", lambda m: {"direction": m.group(1).lower(), "amount": int(m.group(2) or 3)}),
     (re.compile(r"^(?:press|send(?:\s+keys?)?)\s+(.+)$", re.I),
      "send_keys", lambda m: {"keys": m.group(1).strip()}),
+    # Click patterns — UIA name resolution in collector (no vision needed)
+    (re.compile(r"^(?:click|tap|hit|select)\s+(?:on\s+)?(?:the\s+)?['\"]?(.+?)['\"]?(?:\s+button)?$", re.I),
+     "click", lambda m: {"name": m.group(1).strip()}),
+    (re.compile(r"^double[- ]?click\s+(?:on\s+)?(?:the\s+)?['\"]?(.+?)['\"]?$", re.I),
+     "double_click", lambda m: {"name": m.group(1).strip()}),
+    (re.compile(r"^right[- ]?click\s+(?:on\s+)?(?:the\s+)?['\"]?(.+?)['\"]?$", re.I),
+     "right_click", lambda m: {"name": m.group(1).strip()}),
+    # Type patterns (must come after click to avoid "type" matching "click type...")
     (re.compile(r"^type\s+['\"]?(.+?)['\"]?\s+(?:in|into)\s+(.+)$", re.I),
      "_type_in_window", lambda m: {"text": m.group(1), "window": m.group(2).strip()}),
     (re.compile(r"^type\s+['\"]?(.+?)['\"]?\s*$", re.I),
