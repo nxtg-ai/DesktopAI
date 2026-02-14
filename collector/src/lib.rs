@@ -52,8 +52,14 @@ use ::windows::Win32::UI::WindowsAndMessaging::{
 /// Main entry point for the collector library
 #[cfg(windows)]
 pub fn run() {
+    println!("=== DesktopAI Collector starting ===");
     env_logger::init();
     let config = Config::from_env();
+    println!("Backend WS: {}", config.ws_url);
+    println!("Command bridge: {}", if config.command_enabled { "enabled" } else { "disabled" });
+    println!("Screenshots: {}", if config.enable_screenshot { "enabled" } else { "disabled" });
+    println!("UIA: {}", if config.uia_enabled { "enabled" } else { "disabled" });
+    println!("Idle detection: {}", if config.idle_enabled { "enabled" } else { "disabled" });
 
     // Initialize screenshot buffer if enabled
     if config.enable_screenshot {

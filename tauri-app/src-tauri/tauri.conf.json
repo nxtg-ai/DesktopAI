@@ -5,6 +5,7 @@
   "identifier": "ai.nxtg.desktopai",
   "build": {
     "frontendDist": "../src",
+    "beforeDevCommand": "python3 -m http.server 1420 -d ../src",
     "devUrl": "http://localhost:1420"
   },
   "app": {

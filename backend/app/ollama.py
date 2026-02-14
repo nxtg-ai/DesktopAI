@@ -372,7 +372,7 @@ class OllamaClient:
         *,
         model: Optional[str] = None,
         format: Optional[dict] = None,
-        timeout_s: float = 30.0,
+        timeout_s: float = 60.0,
     ) -> Optional[str]:
         active_model = model or self.model
         response_text, status_code, error_detail = await self._chat_once(

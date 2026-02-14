@@ -42,12 +42,16 @@ pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
     let mut backoff_ms: u64 = 1000;
     let max_backoff_ms = config.ws_reconnect_max_ms;
 
+    println!("Network worker started, connecting to {}", config.ws_url);
+
     loop {
         // Reconnect if needed (with exponential backoff)
         if ws.is_none() && last_attempt.elapsed() >= Duration::from_millis(backoff_ms) {
             last_attempt = Instant::now();
+            println!("Attempting WebSocket connection...");
             ws = connect_ws(&config.ws_url);
             if let Some(ref mut socket) = ws {
+                println!("Connected to backend!");
                 // Reset backoff on successful connection
                 backoff_ms = 1000;
                 // Set non-blocking for command reads
@@ -57,6 +61,7 @@ pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
             } else {
                 // Increase backoff on failed connection
                 backoff_ms = calculate_backoff(backoff_ms, max_backoff_ms);
+                println!("WebSocket connect failed, retrying in {}ms", backoff_ms);
                 log::info!("WebSocket reconnect failed, next attempt in {}ms", backoff_ms);
             }
         }
