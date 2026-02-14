@@ -1,6 +1,8 @@
 """Agent, vision, chat, and bridge routes."""
 
 import logging
+import re
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, HTTPException
 
@@ -55,6 +57,50 @@ _PERSONALITY_PROMPTS = {
 def _is_action_intent(message: str) -> bool:
     words = set(message.lower().split())
     return bool(words & _ACTION_KEYWORDS)
+
+
+# Patterns for direct bridge commands (no vision needed).
+# Each tuple: (compiled regex, action name, param builder).
+_DIRECT_PATTERNS: list[tuple[re.Pattern, str, Callable[[re.Match], dict[str, Any]]]] = [
+    (re.compile(r"^(?:open|launch|start)\s+(.+)$", re.I),
+     "open_application", lambda m: {"application": m.group(1).strip()}),
+    (re.compile(r"^(?:focus|switch\s+to|go\s+to)\s+(.+)$", re.I),
+     "focus_window", lambda m: {"title": m.group(1).strip()}),
+    (re.compile(r"^scroll\s+(up|down)(?:\s+(\d+))?", re.I),
+     "scroll", lambda m: {"direction": m.group(1).lower(), "amount": int(m.group(2) or 3)}),
+    (re.compile(r"^(?:press|send(?:\s+keys?)?)\s+(.+)$", re.I),
+     "send_keys", lambda m: {"keys": m.group(1).strip()}),
+    (re.compile(r"^type\s+['\"]?(.+?)['\"]?\s+(?:in|into)\s+(.+)$", re.I),
+     "_type_in_window", lambda m: {"text": m.group(1), "window": m.group(2).strip()}),
+    (re.compile(r"^type\s+['\"]?(.+?)['\"]?\s*$", re.I),
+     "type_text", lambda m: {"text": m.group(1).strip()}),
+]
+
+
+async def _try_direct_command(message: str) -> Optional[dict]:
+    """Try to match message to a direct bridge command.
+
+    Returns a result dict on match, or None to fall through to VisionAgent.
+    """
+    if not bridge.connected:
+        return None
+
+    stripped = message.strip()
+    for pattern, action, param_fn in _DIRECT_PATTERNS:
+        match = pattern.match(stripped)
+        if not match:
+            continue
+        params = param_fn(match)
+
+        if action == "_type_in_window":
+            await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
+            result = await bridge.execute("type_text", {"text": params["text"]}, timeout_s=5)
+        else:
+            result = await bridge.execute(action, params, timeout_s=5)
+
+        return {"action": action, "parameters": params, "result": result}
+
+    return None
 
 
 def _build_context_response(ctx) -> str:
@@ -177,6 +223,15 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         except Exception as exc:
             logger.warning("Recipe execution failed: %s", exc)
 
+    # Fast path: direct bridge command for simple actions (no VLM needed)
+    if not action_triggered and request.allow_actions and bridge.connected:
+        try:
+            if await _try_direct_command(message):
+                action_triggered = True
+        except Exception as exc:
+            logger.warning("Direct command failed: %s", exc)
+
+    # Slow path: VisionAgent for complex/ambiguous actions
     if not action_triggered and request.allow_actions and _is_action_intent(message):
         try:
             start_req = AutonomyStartRequest(
@@ -248,10 +303,19 @@ async def chat_endpoint(request: ChatRequest) -> dict:
                 f"session {round(session.get('session_duration_s', 0) / 60, 1)} min. "
                 f"Top: {top}"
             )
-        if action_triggered:
+        if action_triggered and run_id:
+            # Async VisionAgent / orchestrator — still in progress
             system_parts.append(
-                f"\nI've started an autonomous task for: {message}. "
-                "Acknowledge this and describe what you're doing."
+                f"\nAn autonomous agent is now working on: {message}. "
+                "Tell the user the task is IN PROGRESS — do NOT say it is done or complete. "
+                "Say something like 'Working on it now' or 'I'm on it'. "
+                "The agent runs in the background and results will appear shortly."
+            )
+        elif action_triggered:
+            # Direct bridge command — already executed
+            system_parts.append(
+                f"\nI just executed a direct desktop command for: {message}. "
+                "Confirm what you did briefly."
             )
         llm_messages.append({"role": "system", "content": "\n".join(system_parts)})
 

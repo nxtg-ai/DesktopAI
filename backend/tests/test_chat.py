@@ -5,10 +5,10 @@ import os
 os.environ.setdefault("BACKEND_DB_PATH", ":memory:")
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.main import app, chat_memory, ollama, store
+from app.main import app, bridge, chat_memory, ollama, store
 from httpx import ASGITransport, AsyncClient
 
 
@@ -341,3 +341,129 @@ async def test_chat_system_prompt_includes_recent_apps(client):
     assert len(system_msgs) >= 1
     system_text = system_msgs[0]["content"].lower()
     assert "notepad" in system_text
+
+
+# ── Direct bridge command fast path tests ────────────────────────────────
+
+
+def _mock_bridge_connected():
+    """Context manager that makes bridge appear connected with a mock execute."""
+    mock_exec = AsyncMock(return_value={"status": "ok"})
+    return patch.object(bridge, "_ws", new=MagicMock()), \
+           patch.object(bridge, "execute", mock_exec), \
+           mock_exec
+
+
+@pytest.mark.anyio
+async def test_direct_open_application(client):
+    """'open notepad' with bridge connected should execute directly, no run_id."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch, \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "open notepad", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    assert data.get("run_id") is None  # direct, not async
+    mock_exec.assert_called_once_with(
+        "open_application", {"application": "notepad"}, timeout_s=5,
+    )
+
+
+@pytest.mark.anyio
+async def test_direct_focus_window(client):
+    """'switch to Chrome' should call focus_window via bridge."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch, \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "switch to Chrome", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    assert data.get("run_id") is None
+    mock_exec.assert_called_once_with(
+        "focus_window", {"title": "Chrome"}, timeout_s=5,
+    )
+
+
+@pytest.mark.anyio
+async def test_direct_type_in_window(client):
+    """'type hello in Notepad' should focus then type (two bridge calls)."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch, \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "type hello in Notepad", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    assert mock_exec.call_count == 2
+    mock_exec.assert_any_call("focus_window", {"title": "Notepad"}, timeout_s=5)
+    mock_exec.assert_any_call("type_text", {"text": "hello"}, timeout_s=5)
+
+
+@pytest.mark.anyio
+async def test_direct_scroll(client):
+    """'scroll down' should call scroll via bridge with default amount."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch, \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "scroll down", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    mock_exec.assert_called_once_with(
+        "scroll", {"direction": "down", "amount": 3}, timeout_s=5,
+    )
+
+
+@pytest.mark.anyio
+async def test_direct_falls_through_to_vision(client):
+    """'click the submit button' should NOT match direct patterns — goes to VisionAgent."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch, \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "click the submit button", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    # Falls through to VisionAgent (async) → has a run_id
+    assert data["action_triggered"] is True
+    assert data.get("run_id") is not None
+
+
+@pytest.mark.anyio
+async def test_direct_no_bridge_falls_through(client):
+    """When bridge is disconnected, direct path is skipped gracefully."""
+    # Default bridge has _ws=None → connected=False
+    assert not bridge.connected
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "open notepad", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    # Falls through to VisionAgent/autonomy since bridge is disconnected
+    assert data["action_triggered"] is True
+    assert data.get("run_id") is not None
