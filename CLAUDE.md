@@ -41,10 +41,16 @@ ui-tests/             - Playwright end-to-end tests
 
 ### Quick Commands
 ```bash
-# Backend
+# Service control
+./desktopai.sh start    # Ollama + backend (background)
+./desktopai.sh stop     # Stop backend
+./desktopai.sh restart  # Stop + start
+./desktopai.sh status   # Running? Ollama? Collector?
+
+# Backend (manual)
 cd /home/axw/projects/DesktopAI
 source .venv/bin/activate
-pytest backend/tests/ -m "not integration" -q   # 423 unit tests
+pytest backend/tests/ -m "not integration" -q   # 508 unit tests
 uvicorn app.main:app --app-dir backend           # Dev server
 
 # Linting & Type Checking
@@ -76,11 +82,28 @@ make ui-test                                      # Headless Playwright
 - `POST /api/autonomy/start` — Start orchestrator-based autonomous run
 
 ## Testing Standards
-- 423 Python unit tests, 70 Rust tests — never decrease
+- 508 Python unit tests, 72 Rust tests — never decrease
 - New features require test coverage
 - Edge cases and error paths must be tested
 - CI runs ruff, pyright, and clippy before tests
 - `conftest.py` sets `ACTION_EXECUTOR_MODE=simulated` — executor tested separately
+
+## Direct Bridge Fast Path (Chat Action Dispatch)
+Chat commands are dispatched in three tiers (in `routes/agent.py`):
+1. **Recipe keyword match** → orchestrator (existing)
+2. **Direct bridge regex** → `bridge.execute()` instantly, canned response, `source: "direct"` (NEW)
+3. **VisionAgent** → screenshot + VLM, slow but smart, `source: "ollama"` with `run_id`
+
+Direct bridge patterns (no vision/LLM needed):
+- `open/launch/start {app}` → `open_application`
+- `focus/switch to/go to {window}` → `focus_window`
+- `click/tap/select {element}` → `click` (UIA name resolution)
+- `double-click {element}` → `double_click` (UIA)
+- `right-click {element}` → `right_click` (UIA)
+- `type {text} in {window}` → `focus_window` + `type_text`
+- `type {text}` → `type_text`
+- `scroll up/down` → `scroll`
+- `press/send {keys}` → `send_keys`
 
 ## Key Patterns
 - SQLite stores: separate DB file, `threading.Lock`, `asyncio.to_thread`, WAL mode
@@ -95,6 +118,7 @@ make ui-test                                      # Headless Playwright
 - **conftest.py**: Must set `ACTION_EXECUTOR_MODE=simulated` for test isolation.
 - **WindowEvent**: Uses `ConfigDict(extra="allow")` — access `screenshot_b64` via `getattr(event, "screenshot_b64", None)`.
 - **Dev server**: `uvicorn app.main:app --app-dir backend` (not `backend.app.main`).
+- **Recipe keyword collision**: `schedule_focus` recipe has keyword "focus" — "focus Chrome" matches the recipe before direct bridge. Use "switch to Chrome" or be aware of recipe priority.
 
 ## CI/CD
 - `.github/workflows/backend-test.yml` — Lint (ruff) -> Type check (pyright) -> Test (pytest)
@@ -102,12 +126,15 @@ make ui-test                                      # Headless Playwright
 - `.github/workflows/llm-integration.yml` — Real Ollama integration tests
 - Config: `pyproject.toml` (ruff + pyright settings)
 
-## What's Shipped (Sprints 1-5)
+## What's Shipped (Sprints 1-6)
 - Closed-loop autonomy (observe->plan->execute->verify)
 - 3-tier autonomy levels (supervised/guided/autonomous)
 - 3 personality modes (copilot/assistant/operator)
+- Automatic personality adaptation based on session energy
+- Autonomy auto-promotion (supervised->guided->autonomous) via success rate
 - Kill switch (Ctrl+Shift+X, UI button, API)
 - Vision agent with confidence gating
+- **Direct bridge fast path** — 9 regex patterns for instant command execution (<1s)
 - Trajectory-based error learning
 - Multi-turn chat memory with conversation persistence
 - Notification engine with 4 rules (idle, app-switch, milestone, context-insight)
@@ -116,13 +143,14 @@ make ui-test                                      # Headless Playwright
 - Session greeting on collector connect
 - Heartbeat ping/pong
 - 9 collector desktop commands
+- Multi-monitor screenshot (foreground monitor only)
 - Chat screenshot inclusion
 - Dark mode, keyboard shortcuts, glassmorphism UI
+- Service control script (`./desktopai.sh start|stop|restart|status`)
 
-## What's Next (Sprint 6+ — see BACKLOG.md)
-- Automatic personality adaptation based on session energy
-- Autonomy auto-promotion (supervised->guided->autonomous) via success rate
+## What's Next (Sprint 7+ — see BACKLOG.md)
 - 3D Blender avatar with WebGL/WebGPU renderer
 - Avatar expandable limbs (context/log/reasoning panels)
 - Avatar marketplace (skins + skill packs)
-- Developer quickstart README
+- Streaming chat responses (SSE)
+- Natural language multi-step macros
