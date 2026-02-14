@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .env
 backend/.env
+.desktopai.pid
+desktopai.log
 backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.ruff_cache/
