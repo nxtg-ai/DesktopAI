@@ -92,7 +92,7 @@ fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
 
     // Capture screenshot if enabled
     let screenshot_b64 = if config.enable_screenshot {
-        match crate::screenshot::capture_screenshot(config) {
+        match crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0)) {
             Some(b64) => Some(b64),
             None => {
                 log::warn!("Screenshot capture failed during observe");
@@ -227,7 +227,7 @@ fn handle_click(cmd: &Command, config: &Config) -> CommandResult {
         let mut cmd_result = CommandResult::success(&cmd.command_id, result);
         // Capture post-action state
         cmd_result.screenshot_b64 = if config.enable_screenshot {
-            crate::screenshot::capture_screenshot(config)
+            crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
         } else {
             None
         };
@@ -250,7 +250,7 @@ fn handle_click(cmd: &Command, config: &Config) -> CommandResult {
 
             let mut cmd_result = CommandResult::success(&cmd.command_id, result);
             cmd_result.screenshot_b64 = if config.enable_screenshot {
-                crate::screenshot::capture_screenshot(config)
+                crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
             } else {
                 None
             };
@@ -328,7 +328,7 @@ fn handle_type_text(cmd: &Command, config: &Config) -> CommandResult {
                 result.insert("target".to_string(), serde_json::Value::String(target_id.to_string()));
                 let mut cmd_result = CommandResult::success(&cmd.command_id, result);
                 cmd_result.screenshot_b64 = if config.enable_screenshot {
-                    crate::screenshot::capture_screenshot(config)
+                    crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
                 } else {
                     None
                 };
@@ -344,7 +344,7 @@ fn handle_type_text(cmd: &Command, config: &Config) -> CommandResult {
     result.insert("method".to_string(), serde_json::Value::String("send_input".to_string()));
     let mut cmd_result = CommandResult::success(&cmd.command_id, result);
     cmd_result.screenshot_b64 = if config.enable_screenshot {
-        crate::screenshot::capture_screenshot(config)
+        crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
     } else {
         None
     };
@@ -518,7 +518,7 @@ fn handle_send_keys(cmd: &Command, config: &Config) -> CommandResult {
     result.insert("keys".to_string(), serde_json::Value::String(keys.to_string()));
     let mut cmd_result = CommandResult::success(&cmd.command_id, result);
     cmd_result.screenshot_b64 = if config.enable_screenshot {
-        crate::screenshot::capture_screenshot(config)
+        crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
     } else {
         None
     };
@@ -604,7 +604,7 @@ fn handle_open_application(cmd: &Command, config: &Config) -> CommandResult {
     res.insert("started".to_string(), serde_json::Value::String(app.to_string()));
     let mut cmd_result = CommandResult::success(&cmd.command_id, res);
     cmd_result.screenshot_b64 = if config.enable_screenshot {
-        crate::screenshot::capture_screenshot(config)
+        crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
     } else {
         None
     };
@@ -669,7 +669,7 @@ fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
     result.insert("focused".to_string(), serde_json::Value::String(title_pattern.to_string()));
     let mut cmd_result = CommandResult::success(&cmd.command_id, result);
     cmd_result.screenshot_b64 = if config.enable_screenshot {
-        crate::screenshot::capture_screenshot(config)
+        crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
     } else {
         None
     };
@@ -715,7 +715,7 @@ fn handle_scroll(cmd: &Command, config: &Config) -> CommandResult {
     result.insert("amount".to_string(), serde_json::json!(amount));
     let mut cmd_result = CommandResult::success(&cmd.command_id, result);
     cmd_result.screenshot_b64 = if config.enable_screenshot {
-        crate::screenshot::capture_screenshot(config)
+        crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
     } else {
         None
     };
@@ -835,7 +835,7 @@ fn handle_double_click(cmd: &Command, config: &Config) -> CommandResult {
     result.insert("y".to_string(), serde_json::json!(y));
     let mut cmd_result = CommandResult::success(&cmd.command_id, result);
     cmd_result.screenshot_b64 = if config.enable_screenshot {
-        crate::screenshot::capture_screenshot(config)
+        crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
     } else {
         None
     };
@@ -905,7 +905,7 @@ fn handle_right_click(cmd: &Command, config: &Config) -> CommandResult {
     result.insert("y".to_string(), serde_json::json!(y));
     let mut cmd_result = CommandResult::success(&cmd.command_id, result);
     cmd_result.screenshot_b64 = if config.enable_screenshot {
-        crate::screenshot::capture_screenshot(config)
+        crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
     } else {
         None
     };

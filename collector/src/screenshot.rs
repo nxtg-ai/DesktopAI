@@ -3,10 +3,10 @@ use std::sync::{Mutex, OnceLock};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-    GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-    SRCCOPY,
+    GetDIBits, GetMonitorInfoW, MonitorFromWindow, ReleaseDC, SelectObject, BITMAPINFO,
+    BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, MONITOR_DEFAULTTONEAREST, MONITORINFO, SRCCOPY,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetDesktopWindow, GetWindowRect};
+use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 use crate::config::Config;
 
@@ -19,14 +19,17 @@ pub fn init_screenshot_buffer() {
     SCREENSHOT_BUFFER.get_or_init(|| Mutex::new(VecDeque::with_capacity(RING_BUFFER_SIZE)));
 }
 
-/// Capture a screenshot of the desktop and return as base64-encoded JPEG
-pub fn capture_screenshot(config: &Config) -> Option<String> {
+/// Capture a screenshot of the monitor containing the given window (or the
+/// foreground window if `hwnd` is null/zero) and return as base64-encoded JPEG.
+/// On multi-monitor setups this avoids the squished full-virtual-desktop image
+/// that confused the VLM.
+pub fn capture_screenshot(config: &Config, hwnd: HWND) -> Option<String> {
     if !config.enable_screenshot {
         return None;
     }
 
     // Capture the raw screenshot
-    let pixels = capture_desktop_pixels()?;
+    let pixels = capture_monitor_pixels(hwnd)?;
 
     // Downscale if needed
     let (width, height, pixels) = downscale_if_needed(
@@ -47,18 +50,36 @@ pub fn capture_screenshot(config: &Config) -> Option<String> {
     Some(base64_encode(&jpeg_data))
 }
 
-/// Capture raw desktop pixels
-fn capture_desktop_pixels() -> Option<(u32, u32, Vec<u8>)> {
+/// Capture raw pixels from the monitor that contains the given window.
+/// Falls back to the foreground window when `hwnd` is null, and ultimately
+/// to the primary monitor if no foreground window is found.
+fn capture_monitor_pixels(hwnd: HWND) -> Option<(u32, u32, Vec<u8>)> {
     unsafe {
-        let hwnd_desktop = GetDesktopWindow();
-        let mut rect = windows::Win32::Foundation::RECT::default();
-        if GetWindowRect(hwnd_desktop, &mut rect).is_err() {
-            log::error!("Failed to get desktop window rect");
+        // Resolve the target window: use provided hwnd, or fall back to foreground
+        let target = if hwnd.0 == 0 {
+            GetForegroundWindow()
+        } else {
+            hwnd
+        };
+
+        // Get the monitor that contains the target window
+        let hmonitor = MonitorFromWindow(target, MONITOR_DEFAULTTONEAREST);
+
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+
+        if !GetMonitorInfoW(hmonitor, &mut mi).as_bool() {
+            log::error!("GetMonitorInfoW failed, cannot determine monitor rect");
             return None;
         }
 
-        let width = (rect.right - rect.left) as u32;
-        let height = (rect.bottom - rect.top) as u32;
+        let mon = mi.rcMonitor;
+        let width = (mon.right - mon.left) as u32;
+        let height = (mon.bottom - mon.top) as u32;
+        let src_x = mon.left;
+        let src_y = mon.top;
 
         let hdc_screen = GetDC(HWND(0));
         if hdc_screen.is_invalid() {
@@ -90,8 +111,8 @@ fn capture_desktop_pixels() -> Option<(u32, u32, Vec<u8>)> {
             width as i32,
             height as i32,
             hdc_screen,
-            0,
-            0,
+            src_x,
+            src_y,
             SRCCOPY,
         )
         .is_err()

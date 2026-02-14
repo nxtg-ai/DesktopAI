@@ -78,7 +78,7 @@ pub fn build_event(hwnd: HWND) -> Option<WindowEvent> {
     let process_exe = if pid == 0 { String::new() } else { process_path(pid) };
     let config = CONFIG.get();
     let uia = config.and_then(|cfg| uia_snapshot(hwnd, cfg));
-    let screenshot_b64 = config.and_then(|cfg| capture_screenshot(cfg));
+    let screenshot_b64 = config.and_then(|cfg| capture_screenshot(cfg, hwnd));
     Some(WindowEvent {
         event_type: "foreground".to_string(),
         hwnd: hwnd_to_hex(hwnd),
