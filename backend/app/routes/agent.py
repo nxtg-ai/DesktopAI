@@ -224,9 +224,11 @@ async def chat_endpoint(request: ChatRequest) -> dict:
             logger.warning("Recipe execution failed: %s", exc)
 
     # Fast path: direct bridge command for simple actions (no VLM needed)
+    direct_result = None
     if not action_triggered and request.allow_actions and bridge.connected:
         try:
-            if await _try_direct_command(message):
+            direct_result = await _try_direct_command(message)
+            if direct_result:
                 action_triggered = True
         except Exception as exc:
             logger.warning("Direct command failed: %s", exc)
@@ -255,6 +257,27 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     await chat_memory.save_message(
         conversation_id, "user", message, desktop_context=ctx_dict
     )
+
+    # Direct commands: return immediately — no LLM call needed
+    if direct_result:
+        action = direct_result["action"]
+        friendly = action.replace("_", " ")
+        if action == "_type_in_window":
+            friendly = f"typed in {direct_result['parameters']['window']}"
+        response = f"Done — {friendly}."
+        await chat_memory.save_message(conversation_id, "assistant", response)
+        result = {
+            "response": response,
+            "source": "direct",
+            "desktop_context": ctx_dict,
+            "action_triggered": True,
+            "run_id": None,
+            "conversation_id": conversation_id,
+            "personality_mode": settings.personality_mode,
+        }
+        if screenshot_b64:
+            result["screenshot_b64"] = screenshot_b64
+        return result
 
     # Fetch session summary for enriched context
     session = await store.session_summary()
