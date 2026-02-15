@@ -39,11 +39,11 @@ impl Config {
         let idle_enabled = env_bool("IDLE_ENABLED", true);
         let idle_threshold = Duration::from_millis(env_u64("IDLE_THRESHOLD_MS", 60_000));
         let idle_poll = Duration::from_millis(env_u64("IDLE_POLL_MS", 1000));
-        let uia_enabled = env_bool("UIA_ENABLED", false);
+        let uia_enabled = env_bool("UIA_ENABLED", true);
         let uia_throttle = Duration::from_millis(env_u64("UIA_THROTTLE_MS", 1000));
         let uia_text_max = env_usize("UIA_TEXT_MAX_CHARS", 240);
         let uia_max_depth = env_usize("UIA_MAX_DEPTH", 3);
-        let enable_screenshot = env_bool("ENABLE_SCREENSHOT", false);
+        let enable_screenshot = env_bool("ENABLE_SCREENSHOT", true);
         let screenshot_max_width = env_u32("SCREENSHOT_MAX_WIDTH", 1024);
         let screenshot_max_height = env_u32("SCREENSHOT_MAX_HEIGHT", 768);
         let screenshot_quality = env_u8("SCREENSHOT_QUALITY", 85);
@@ -404,11 +404,11 @@ mod tests {
         assert!(config.idle_enabled);
         assert_eq!(config.idle_threshold, Duration::from_millis(60_000));
         assert_eq!(config.idle_poll, Duration::from_millis(1000));
-        assert!(!config.uia_enabled);
+        assert!(config.uia_enabled);
         assert_eq!(config.uia_throttle, Duration::from_millis(1000));
         assert_eq!(config.uia_text_max, 240);
         assert_eq!(config.uia_max_depth, 3);
-        assert!(!config.enable_screenshot);
+        assert!(config.enable_screenshot);
         assert_eq!(config.screenshot_max_width, 1024);
         assert_eq!(config.screenshot_max_height, 768);
         assert_eq!(config.screenshot_quality, 85);
