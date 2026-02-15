@@ -472,8 +472,58 @@ async def test_direct_no_bridge_falls_through(client):
 
 
 @pytest.mark.anyio
+async def test_greeting_fast_path(client):
+    """Simple greetings should return instantly without calling the LLM."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True) as mock_avail, \
+         patch.object(ollama, "chat", new_callable=AsyncMock) as mock_chat:
+        resp = await client.post("/api/chat", json={"message": "hello"})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "greeting"
+    assert data["action_triggered"] is False
+    assert data.get("run_id") is None
+    assert len(data["response"]) > 0
+    # LLM should NOT have been called
+    mock_chat.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_greeting_with_punctuation(client):
+    """'hey!' should still match the greeting fast path."""
+    resp_data = None
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", new_callable=AsyncMock) as mock_chat:
+        resp = await client.post("/api/chat", json={"message": "hey!"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "greeting"
+    mock_chat.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_context_response_no_uia_dump(client):
+    """Context fallback response should NOT include UIA elements."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post("/api/chat", json={"message": "what am I looking at?"})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    # Should have window title but NOT UIA tree
+    assert "Outlook" in data["response"]
+    assert "Tree:" not in data["response"]
+    assert "UI elements" not in data["response"]
+
+
+@pytest.mark.anyio
 async def test_conversational_no_uia_dump(client):
-    """Saying 'hello' should NOT include full UIA tree (to_llm_prompt) in system prompt."""
+    """Non-action conversational message should NOT include UIA tree in system prompt."""
     event = _seed_event()
     await store.record(event)
 
@@ -481,11 +531,12 @@ async def test_conversational_no_uia_dump(client):
 
     async def mock_chat(messages, **kwargs):
         captured_messages.extend(messages)
-        return "Hi there!"
+        return "You seem to be reading emails."
 
     with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
          patch.object(ollama, "chat", side_effect=mock_chat):
-        resp = await client.post("/api/chat", json={"message": "hello"})
+        # "how is my day going" is conversational, not a greeting, not an action
+        resp = await client.post("/api/chat", json={"message": "how is my day going"})
 
     assert resp.status_code == 200
     system_msgs = [m for m in captured_messages if m.get("role") == "system"]
@@ -493,10 +544,7 @@ async def test_conversational_no_uia_dump(client):
     system_text = system_msgs[0]["content"]
     # Should have lightweight context, not full UIA dump
     assert "User is in:" in system_text or "App:" in system_text
-    assert "to_llm_prompt" not in system_text
-    # The full UIA tree marker — ctx.to_llm_prompt() includes "Current desktop state:"
-    # followed by detailed UIA tree. Lightweight just has "User is in:" and "App:".
-    assert "UIA" not in system_text
+    assert "Current desktop state:" not in system_text
 
 
 @pytest.mark.anyio

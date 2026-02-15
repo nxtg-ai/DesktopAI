@@ -1,6 +1,7 @@
 """Agent, vision, chat, and bridge routes."""
 
 import logging
+import random
 import re
 from typing import Any, Callable, Optional
 
@@ -111,6 +112,21 @@ async def _try_direct_command(message: str) -> Optional[dict]:
     return None
 
 
+_GREETING_WORDS = {"hello", "hi", "hey", "sup", "yo", "howdy", "hola", "greetings"}
+
+_GREETING_RESPONSES = [
+    "Hey! What can I help you with?",
+    "Hi there! What do you need?",
+    "Hey! Ready when you are.",
+]
+
+
+def _is_greeting(message: str) -> bool:
+    """Check if message is a simple greeting (no action intent)."""
+    words = message.lower().strip().rstrip("!?.").split()
+    return len(words) <= 3 and bool(set(words) & _GREETING_WORDS)
+
+
 def _build_context_response(ctx) -> str:
     if ctx is None:
         return "I don't have visibility into your desktop right now. Connect the Windows collector to give me eyes on your screen."
@@ -118,11 +134,6 @@ def _build_context_response(ctx) -> str:
     if ctx.process_exe:
         parts[0] += f" ({ctx.process_exe})"
     parts[0] += "."
-    if ctx.uia_summary:
-        elements = ctx.uia_summary[:300]
-        parts.append(f"I can see these UI elements: {elements}")
-    if ctx.screenshot_b64:
-        parts.append("I also have a screenshot of your desktop.")
     return " ".join(parts)
 
 
@@ -265,6 +276,23 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     await chat_memory.save_message(
         conversation_id, "user", message, desktop_context=ctx_dict
     )
+
+    # Greeting fast path: instant response, no LLM call
+    if not action_triggered and _is_greeting(message):
+        response = random.choice(_GREETING_RESPONSES)
+        await chat_memory.save_message(conversation_id, "assistant", response)
+        result = {
+            "response": response,
+            "source": "greeting",
+            "desktop_context": ctx_dict,
+            "action_triggered": False,
+            "run_id": None,
+            "conversation_id": conversation_id,
+            "personality_mode": settings.personality_mode,
+        }
+        if screenshot_b64:
+            result["screenshot_b64"] = screenshot_b64
+        return result
 
     # Direct commands: return immediately — no LLM call needed
     if direct_result:
