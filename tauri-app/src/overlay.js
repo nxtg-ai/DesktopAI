@@ -912,7 +912,42 @@ window.addEventListener("beforeunload", () => {
   if (mediaStream) { mediaStream.getTracks().forEach((t) => t.stop()); }
 });
 
+// ── Health Chips ────────────────────────────────────────────────────
+async function pollHealth() {
+  try {
+    const r = await fetch(`${API_BASE}/api/readiness/status`);
+    const data = await r.json();
+    const s = data.summary || {};
+    setHealthChip("hc-ollama", s.ollama_available, s.ollama_active_model || "");
+    setHealthChip("hc-bridge", s.bridge_connected, s.executor_mode || "");
+    setHealthChip("hc-collector", s.collector_connected, `${s.collector_total_events || 0} events`);
+  } catch {
+    ["hc-ollama", "hc-bridge", "hc-collector"].forEach(id => setHealthChip(id, false, "offline"));
+  }
+}
+
+function setHealthChip(id, ok, detail) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove("ok", "down");
+  el.classList.add(ok ? "ok" : "down");
+  el.title = detail;
+}
+
+setInterval(pollHealth, 10000);
+
 // ── Boot ────────────────────────────────────────────────────────────
 setStatus("connecting", "connecting...");
 fetchContext();
 connectWS();
+pollHealth();
+
+// Listen for palette messages and display in avatar chat
+if (window.__TAURI__) {
+  window.__TAURI__.event.listen("palette-message", (event) => {
+    const { user, agent, source, action_triggered, conversation_id: cid } = event.payload;
+    if (cid) conversationId = cid;
+    appendMessage("user", user);
+    appendMessage("agent", agent, { source, action_triggered });
+  });
+}

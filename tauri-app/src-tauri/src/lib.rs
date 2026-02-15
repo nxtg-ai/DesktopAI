@@ -159,12 +159,6 @@ pub fn run() {
                 log::warn!("Failed to register Ctrl+Shift+X: {e}");
             }
 
-            // Apply WS_EX_NOACTIVATE to avatar overlay — never steals focus
-            #[cfg(target_os = "windows")]
-            if let Some(avatar) = app.get_webview_window("avatar") {
-                win_focus::apply_noactivate(&avatar);
-            }
-
             // System tray
             let show = MenuItem::with_id(app, "show", "Show DesktopAI", true, None::<&str>)?;
             let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;

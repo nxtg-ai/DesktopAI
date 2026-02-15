@@ -307,6 +307,45 @@ html, body {
   color: var(--text-muted);
 }
 
+/* ── Health Chips ── */
+.health-chips {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 10px;
+  flex-shrink: 0;
+}
+
+.health-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.hc-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--orange);
+  transition: background 0.4s;
+}
+
+.health-chip.ok .hc-dot {
+  background: var(--accent);
+  box-shadow: 0 0 4px var(--accent-glow);
+}
+
+.health-chip.down .hc-dot {
+  background: var(--danger);
+}
+
 /* ── Context Bar ── */
 .context-bar {
   display: flex;

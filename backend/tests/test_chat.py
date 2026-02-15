@@ -472,6 +472,59 @@ async def test_direct_no_bridge_falls_through(client):
 
 
 @pytest.mark.anyio
+async def test_conversational_no_uia_dump(client):
+    """Saying 'hello' should NOT include full UIA tree (to_llm_prompt) in system prompt."""
+    event = _seed_event()
+    await store.record(event)
+
+    captured_messages = []
+
+    async def mock_chat(messages, **kwargs):
+        captured_messages.extend(messages)
+        return "Hi there!"
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", side_effect=mock_chat):
+        resp = await client.post("/api/chat", json={"message": "hello"})
+
+    assert resp.status_code == 200
+    system_msgs = [m for m in captured_messages if m.get("role") == "system"]
+    assert len(system_msgs) >= 1
+    system_text = system_msgs[0]["content"]
+    # Should have lightweight context, not full UIA dump
+    assert "User is in:" in system_text or "App:" in system_text
+    assert "to_llm_prompt" not in system_text
+    # The full UIA tree marker — ctx.to_llm_prompt() includes "Current desktop state:"
+    # followed by detailed UIA tree. Lightweight just has "User is in:" and "App:".
+    assert "UIA" not in system_text
+
+
+@pytest.mark.anyio
+async def test_action_gets_full_context(client):
+    """'open notepad' should include full desktop context in system prompt."""
+    event = _seed_event()
+    await store.record(event)
+
+    captured_messages = []
+
+    async def mock_chat(messages, **kwargs):
+        captured_messages.extend(messages)
+        return "Opening notepad."
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", side_effect=mock_chat):
+        # "open notepad" contains action keyword "open" → should get full context
+        resp = await client.post("/api/chat", json={"message": "open notepad"})
+
+    assert resp.status_code == 200
+    system_msgs = [m for m in captured_messages if m.get("role") == "system"]
+    assert len(system_msgs) >= 1
+    system_text = system_msgs[0]["content"]
+    # Should contain full desktop state from to_llm_prompt()
+    assert "Current desktop state:" in system_text
+
+
+@pytest.mark.anyio
 async def test_direct_click_by_name(client):
     """'click Save' should call click with UIA name resolution."""
     ws_patch, exec_patch, mock_exec = _mock_bridge_connected()

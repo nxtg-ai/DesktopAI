@@ -69,6 +69,17 @@ async function sendCommand(message) {
     const reply = data.response || "Done.";
     const source = data.source || "";
 
+    // Sync message to avatar overlay
+    if (window.__TAURI__) {
+      window.__TAURI__.event.emit("palette-message", {
+        user: message,
+        agent: reply,
+        source: source,
+        action_triggered: data.action_triggered,
+        conversation_id: conversationId,
+      });
+    }
+
     // Direct bridge commands: brief confirmation, then auto-dismiss
     if (source === "direct") {
       showResponse(reply);

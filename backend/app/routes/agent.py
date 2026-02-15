@@ -306,7 +306,18 @@ async def chat_endpoint(request: ChatRequest) -> dict:
             _PERSONALITY_PROMPTS.get(mode, _PERSONALITY_PROMPTS["assistant"]),
         ]
         if ctx:
-            system_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
+            if action_triggered or _is_action_intent(message):
+                # Full context for action commands
+                system_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
+            else:
+                # Lightweight context for conversation — no UIA tree dump
+                parts = []
+                if ctx.window_title:
+                    parts.append(f"User is in: {ctx.window_title}")
+                if ctx.process_exe:
+                    parts.append(f"App: {ctx.process_exe}")
+                if parts:
+                    system_parts.append("\n" + ". ".join(parts) + ".")
         # Include recent app transitions so LLM knows what user was doing
         _, recent_events = await store.snapshot()
         if recent_events:
