@@ -7,11 +7,9 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 
 #[cfg(target_os = "windows")]
 mod win_focus {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW,
-        GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        GetForegroundWindow, SetForegroundWindow,
     };
 
     static SAVED_HWND: std::sync::Mutex<Option<isize>> = std::sync::Mutex::new(None);
@@ -39,23 +37,6 @@ mod win_focus {
         }
     }
 
-    /// Apply WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW to a Tauri window.
-    /// Prevents focus stealing and hides from taskbar/Alt+Tab.
-    pub fn apply_noactivate(window: &tauri::WebviewWindow) {
-        if let Ok(handle) = window.window_handle() {
-            if let RawWindowHandle::Win32(win32) = handle.as_raw() {
-                let hwnd = HWND(win32.hwnd.get() as *mut _);
-                unsafe {
-                    let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                    SetWindowLongPtrW(
-                        hwnd,
-                        GWL_EXSTYLE,
-                        style | WS_EX_NOACTIVATE.0 as isize | WS_EX_TOOLWINDOW.0 as isize,
-                    );
-                }
-            }
-        }
-    }
 }
 
 #[tauri::command]
