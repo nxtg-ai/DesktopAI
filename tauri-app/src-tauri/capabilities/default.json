@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for the DesktopAI avatar window",
-  "windows": ["avatar"],
+  "description": "Default capabilities for DesktopAI windows",
+  "windows": ["avatar", "palette"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -11,7 +11,11 @@
     "core:window:allow-set-focus",
     "core:window:allow-set-size",
     "core:window:allow-is-visible",
+    "core:window:allow-center",
     "shell:default",
-    "opener:default"
+    "opener:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered"
   ]
 }

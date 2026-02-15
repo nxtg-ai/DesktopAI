@@ -5,7 +5,7 @@
   "identifier": "ai.nxtg.desktopai",
   "build": {
     "frontendDist": "../src",
-    "beforeDevCommand": "python3 -m http.server 1420 -d ../src",
+    "beforeDevCommand": "python -m http.server 1420 -d src",
     "devUrl": "http://localhost:1420"
   },
   "app": {
@@ -27,6 +27,21 @@
         "x": 50,
         "y": 50,
         "url": "index.html"
+      },
+      {
+        "label": "palette",
+        "title": "",
+        "width": 640,
+        "height": 72,
+        "resizable": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": true,
+        "visible": false,
+        "focus": false,
+        "url": "palette.html"
       }
     ],
     "trayIcon": {

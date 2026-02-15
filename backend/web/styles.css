@@ -933,6 +933,113 @@ h1 {
   --shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
+/* ── Health Ribbon ── */
+.health-ribbon {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 24px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--stroke);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+[data-theme="dark"] .health-ribbon {
+  background: rgba(22, 24, 36, 0.85);
+}
+
+.health-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+  transition: all 0.4s ease;
+  flex-shrink: 0;
+}
+
+.health-item.ok .health-dot {
+  background: #00b8a9;
+  box-shadow: 0 0 6px rgba(0, 184, 169, 0.5);
+}
+
+.health-item.warn .health-dot {
+  background: #f5a623;
+  box-shadow: 0 0 6px rgba(245, 166, 35, 0.4);
+}
+
+.health-item.down .health-dot {
+  background: #ff4d4d;
+  box-shadow: 0 0 6px rgba(255, 77, 77, 0.4);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.health-label {
+  font-weight: 700;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.health-detail {
+  color: var(--muted);
+  font-size: 11px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-separator {
+  width: 1px;
+  height: 16px;
+  background: var(--stroke);
+  flex-shrink: 0;
+}
+
+.health-summary {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  .health-ribbon {
+    gap: 8px;
+    padding: 6px 12px;
+    flex-wrap: wrap;
+  }
+  .health-detail {
+    display: none;
+  }
+  .health-separator {
+    display: none;
+  }
+  .health-summary {
+    width: 100%;
+    text-align: center;
+  }
+}
+
 /* ── Collector Status Badge ── */
 .collector-status {
   display: flex;

@@ -47,6 +47,7 @@ import { sendChatMessage, startNewChat, refreshRecipeSuggestions, fetchPersonali
 import { refreshAgentVision } from "./modules/agent-vision.js";
 import { refreshNotificationCount } from "./modules/notifications.js";
 import { initShortcuts } from "./modules/shortcuts.js";
+import { startHealthPolling } from "./modules/health.js";
 
 // ── Event Listeners ──
 
@@ -248,3 +249,4 @@ refreshRecipeSuggestions();
 fetchPersonalityStatus();
 fetchPromotionStatus();
 startJourneyPolling();
+startHealthPolling();

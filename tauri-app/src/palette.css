@@ -1,0 +1,185 @@
+:root {
+  --bg: rgba(12, 14, 20, 0.92);
+  --surface: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #e8eaed;
+  --text-muted: rgba(232, 234, 237, 0.45);
+  --accent: #00d4aa;
+  --accent-dim: rgba(0, 212, 170, 0.15);
+  --accent-glow: rgba(0, 212, 170, 0.3);
+  --radius: 16px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--font);
+  color: var(--text);
+}
+
+/* ── Main palette bar ── */
+#palette {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 56px;
+  padding: 0 16px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow:
+    0 0 0 1px var(--accent-glow),
+    0 8px 32px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: palette-in 0.15s ease-out;
+  cursor: grab;
+}
+
+.palette-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  opacity: 0.8;
+}
+
+#palette-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  caret-color: var(--accent);
+  cursor: text;
+}
+
+#palette-input::placeholder {
+  color: var(--text-muted);
+}
+
+.palette-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+
+.palette-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: var(--font);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+/* ── Response area ── */
+#palette-response {
+  margin-top: 4px;
+  padding: 10px 16px;
+  background: var(--bg);
+  border-radius: 0 0 var(--radius) var(--radius);
+  border: 1px solid var(--border);
+  border-top: none;
+  backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#palette-response.hidden {
+  display: none;
+}
+
+#response-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+#palette-response::-webkit-scrollbar {
+  width: 4px;
+}
+
+#palette-response::-webkit-scrollbar-thumb {
+  background: var(--surface);
+  border-radius: 2px;
+}
+
+/* ── Loading state ── */
+.loading-dots {
+  display: none;
+  font-size: 13px;
+  color: var(--accent);
+  flex-shrink: 0;
+  cursor: default;
+}
+
+#palette.loading {
+  animation: palette-glow 1.2s ease-in-out infinite;
+}
+
+#palette.loading #palette-input {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+#palette.loading .palette-hint {
+  display: none;
+}
+
+#palette.loading .loading-dots {
+  display: inline;
+}
+
+/* ── Animations ── */
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes palette-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px var(--accent-glow),
+      0 8px 32px rgba(0, 0, 0, 0.6),
+      0 2px 8px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--accent),
+      0 0 20px var(--accent-glow),
+      0 8px 32px rgba(0, 0, 0, 0.6),
+      0 2px 8px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+}

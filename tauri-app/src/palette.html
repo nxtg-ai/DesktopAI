@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DesktopAI Command Palette</title>
+    <link rel="stylesheet" href="palette.css" />
+  </head>
+  <body>
+    <div id="palette" data-tauri-drag-region>
+      <div class="palette-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      </div>
+      <input
+        id="palette-input"
+        type="text"
+        placeholder="Ask DesktopAI anything..."
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <div class="palette-hint">
+        <kbd>Enter</kbd> send &middot; <kbd>Esc</kbd> dismiss
+      </div>
+      <div class="loading-dots">thinking...</div>
+    </div>
+    <div id="palette-response" class="hidden">
+      <div id="response-text"></div>
+    </div>
+    <script src="palette.js" type="module"></script>
+  </body>
+</html>
