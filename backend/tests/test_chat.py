@@ -454,7 +454,8 @@ async def test_direct_falls_through_to_vision(client):
 
 @pytest.mark.anyio
 async def test_direct_no_bridge_falls_through(client):
-    """When bridge is disconnected, direct path is skipped gracefully."""
+    """When bridge is disconnected, direct pattern still matches but bridge
+    doesn't execute — returns direct response with no run_id."""
     # Default bridge has _ws=None → connected=False
     assert not bridge.connected
 
@@ -466,9 +467,10 @@ async def test_direct_no_bridge_falls_through(client):
 
     assert resp.status_code == 200
     data = resp.json()
-    # Falls through to VisionAgent/autonomy since bridge is disconnected
+    # Pattern matches so action_triggered, but bridge didn't execute
+    assert data["source"] == "direct"
     assert data["action_triggered"] is True
-    assert data.get("run_id") is not None
+    assert data.get("run_id") is None
 
 
 @pytest.mark.anyio
@@ -549,7 +551,7 @@ async def test_conversational_no_uia_dump(client):
 
 @pytest.mark.anyio
 async def test_action_gets_full_context(client):
-    """'open notepad' should include full desktop context in system prompt."""
+    """Action intent messages should include full desktop context in system prompt."""
     event = _seed_event()
     await store.record(event)
 
@@ -557,12 +559,12 @@ async def test_action_gets_full_context(client):
 
     async def mock_chat(messages, **kwargs):
         captured_messages.extend(messages)
-        return "Opening notepad."
+        return "Drafting email now."
 
     with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
          patch.object(ollama, "chat", side_effect=mock_chat):
-        # "open notepad" contains action keyword "open" → should get full context
-        resp = await client.post("/api/chat", json={"message": "open notepad"})
+        # "draft a reply" has action keyword "draft" but no direct bridge pattern
+        resp = await client.post("/api/chat", json={"message": "draft a reply to this email"})
 
     assert resp.status_code == 200
     system_msgs = [m for m in captured_messages if m.get("role") == "system"]

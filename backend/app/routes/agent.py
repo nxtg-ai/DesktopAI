@@ -86,6 +86,16 @@ _DIRECT_PATTERNS: list[tuple[re.Pattern, str, Callable[[re.Match], dict[str, Any
 ]
 
 
+def _match_direct_pattern(message: str) -> Optional[tuple[str, dict[str, Any]]]:
+    """Pure pattern match — no bridge call. Returns (action, params) or None."""
+    stripped = message.strip()
+    for pattern, action, param_fn in _DIRECT_PATTERNS:
+        match = pattern.match(stripped)
+        if match:
+            return action, param_fn(match)
+    return None
+
+
 async def _try_direct_command(message: str) -> Optional[dict]:
     """Try to match message to a direct bridge command.
 
@@ -94,22 +104,18 @@ async def _try_direct_command(message: str) -> Optional[dict]:
     if not bridge.connected:
         return None
 
-    stripped = message.strip()
-    for pattern, action, param_fn in _DIRECT_PATTERNS:
-        match = pattern.match(stripped)
-        if not match:
-            continue
-        params = param_fn(match)
+    matched = _match_direct_pattern(message)
+    if not matched:
+        return None
 
-        if action == "_type_in_window":
-            await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
-            result = await bridge.execute("type_text", {"text": params["text"]}, timeout_s=5)
-        else:
-            result = await bridge.execute(action, params, timeout_s=5)
+    action, params = matched
+    if action == "_type_in_window":
+        await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
+        result = await bridge.execute("type_text", {"text": params["text"]}, timeout_s=5)
+    else:
+        result = await bridge.execute(action, params, timeout_s=5)
 
-        return {"action": action, "parameters": params, "result": result}
-
-    return None
+    return {"action": action, "parameters": params, "result": result}
 
 
 _GREETING_WORDS = {"hello", "hi", "hey", "sup", "yo", "howdy", "hola", "greetings"}
@@ -242,15 +248,18 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         except Exception as exc:
             logger.warning("Recipe execution failed: %s", exc)
 
-    # Fast path: direct bridge command for simple actions (no VLM needed)
+    # Fast path: direct bridge command for simple actions (no VLM needed).
+    # Pattern match gates action_triggered — prevents VisionAgent from also
+    # firing on the same command even if bridge execution fails or is offline.
     direct_result = None
-    if not action_triggered and request.allow_actions and bridge.connected:
-        try:
-            direct_result = await _try_direct_command(message)
-            if direct_result:
-                action_triggered = True
-        except Exception as exc:
-            logger.warning("Direct command failed: %s", exc)
+    direct_match = _match_direct_pattern(message) if request.allow_actions else None
+    if not action_triggered and direct_match:
+        action_triggered = True
+        if bridge.connected:
+            try:
+                direct_result = await _try_direct_command(message)
+            except Exception as exc:
+                logger.warning("Direct command failed: %s", exc)
 
     # Slow path: VisionAgent for complex/ambiguous actions
     if not action_triggered and request.allow_actions and _is_action_intent(message):
@@ -295,11 +304,17 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         return result
 
     # Direct commands: return immediately — no LLM call needed
-    if direct_result:
-        action = direct_result["action"]
+    if direct_result or direct_match:
+        if direct_result:
+            action = direct_result["action"]
+            params = direct_result["parameters"]
+        elif direct_match:
+            action, params = direct_match
+        else:
+            action, params = "unknown", {}
         friendly = action.replace("_", " ")
         if action == "_type_in_window":
-            friendly = f"typed in {direct_result['parameters']['window']}"
+            friendly = f"typed in {params.get('window', '')}"
         response = f"Done — {friendly}."
         await chat_memory.save_message(conversation_id, "assistant", response)
         result = {
