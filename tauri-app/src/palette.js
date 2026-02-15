@@ -69,6 +69,9 @@ async function sendCommand(message) {
     const reply = data.response || "Done.";
     const source = data.source || "";
 
+    // Always clear input after successful response
+    input.value = "";
+
     // Sync message to avatar overlay
     if (window.__TAURI__) {
       window.__TAURI__.event.emit("palette-message", {
@@ -80,10 +83,10 @@ async function sendCommand(message) {
       });
     }
 
-    // Direct bridge commands: brief confirmation, then auto-dismiss
-    if (source === "direct") {
+    // Fast responses (greeting, direct bridge): show briefly, auto-dismiss
+    if (source === "greeting" || source === "direct") {
       showResponse(reply);
-      setTimeout(() => dismiss(), 1200);
+      setTimeout(() => dismiss(), source === "greeting" ? 800 : 1200);
       return;
     }
 
