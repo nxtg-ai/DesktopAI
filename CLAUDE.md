@@ -9,8 +9,8 @@ An intelligent desktop assistant that observes user activity and can autonomousl
 - Dogfood daily — we are the user
 
 ## Architecture Overview
-- **Windows Collector (Rust):** 9 modules (config, event, network, idle, uia, windows, screenshot, command, lib). 9 desktop commands (observe, click, type_text, send_keys, open_application, focus_window, scroll, double_click, right_click). Heartbeat ping/pong. Compiles for `x86_64-pc-windows-gnu`, 70 tests run on Linux via `#[cfg(windows)]` gates.
-- **WSL2 Backend (FastAPI):** State management, SQLite persistence, activity classification (rules + Ollama), autonomy orchestration, Playwright browser automation via CDP. OllamaClient supports `/api/chat` with vision + structured JSON output. Multi-turn chat memory, notification engine (4 rules: idle, app-switch, milestone, context-insight), desktop automation recipes.
+- **Windows Collector (Rust):** 9 modules (config, event, network, idle, uia, windows, screenshot, command, lib). 9 desktop commands (observe, click, type_text, send_keys, open_application, focus_window, scroll, double_click, right_click). Click supports x/y coordinates for CUA mode. Heartbeat ping/pong. Compiles for `x86_64-pc-windows-gnu`, 74 tests run on Linux via `#[cfg(windows)]` gates.
+- **WSL2 Backend (FastAPI):** State management, SQLite persistence, activity classification (rules + Ollama), autonomy orchestration, Playwright browser automation via CDP. OllamaClient supports `/api/chat` with vision + structured JSON output + streaming + retry/circuit breaker. TtsEngine wraps Kokoro-82M ONNX for server-side TTS. Multi-turn chat memory, notification engine (4 rules: idle, app-switch, milestone, context-insight), desktop automation recipes.
 - **Web UI:** Glassmorphism design with dark mode toggle, chat with conversation persistence, notification bell, recipe chips, keyboard shortcuts, agent vision, autonomy controls, telemetry dashboard.
 - **Closed-loop agent:** Collector -> StateStore -> DesktopContext -> Executor/Orchestrator/Planner. The observe->decide->act->verify loop uses real desktop state (UIA trees, screenshots).
 
@@ -22,11 +22,11 @@ An intelligent desktop assistant that observes user activity and can autonomousl
 ## Key Directories
 ```
 backend/app/          - FastAPI application code
-backend/app/routes/   - 12 route modules
-backend/tests/        - pytest test suite (423 unit tests)
+backend/app/routes/   - 13 route modules
+backend/tests/        - pytest test suite (562 unit tests)
 backend/web/          - Static web UI (HTML/CSS/JS)
 backend/web/modules/  - 10 ES modules
-collector/            - Rust collector source (70 tests)
+collector/            - Rust collector source (74 tests)
 tauri-app/            - Tauri native desktop app (avatar overlay)
 ui-tests/             - Playwright end-to-end tests
 ```
@@ -50,7 +50,7 @@ ui-tests/             - Playwright end-to-end tests
 # Backend (manual)
 cd /home/axw/projects/DesktopAI
 source .venv/bin/activate
-pytest backend/tests/ -m "not integration" -q   # 508 unit tests
+pytest backend/tests/ -m "not integration" -q   # 540 unit tests
 uvicorn app.main:app --app-dir backend           # Dev server
 
 # Linting & Type Checking
@@ -59,7 +59,7 @@ pyright backend/app/                              # Type checking (0 errors expe
 cd collector && cargo clippy --all-targets -- -D warnings  # Rust linting
 
 # Rust Collector
-cd collector && cargo test                        # 70 tests (Linux-testable)
+cd collector && cargo test                        # 74 tests (Linux-testable)
 
 # UI Testing
 make ui-test                                      # Headless Playwright
@@ -80,9 +80,11 @@ make ui-test                                      # Headless Playwright
 - `GET /api/readiness/status` — System readiness checks
 - `POST /api/agent/run` — Start vision-based autonomous agent run
 - `POST /api/autonomy/start` — Start orchestrator-based autonomous run
+- `POST /api/tts` — Synthesize text to WAV audio (Kokoro-82M, fallback to browser TTS)
+- `GET /api/tts/voices` — List available TTS voices
 
 ## Testing Standards
-- 508 Python unit tests, 72 Rust tests — never decrease
+- 562 Python unit tests, 74 Rust tests — never decrease
 - New features require test coverage
 - Edge cases and error paths must be tested
 - CI runs ruff, pyright, and clippy before tests
@@ -104,6 +106,17 @@ Direct bridge patterns (no vision/LLM needed):
 - `type {text}` → `type_text`
 - `scroll up/down` → `scroll`
 - `press/send {keys}` → `send_keys`
+- `stop/kill/cancel/abort` → cancel all running actions (no bridge needed)
+
+## TTS (Kokoro-82M)
+- **Engine**: `backend/app/tts.py` — `TtsEngine` class wrapping `kokoro_onnx`, lazy model init on first request
+- **Routes**: `POST /api/tts` (text→WAV), `GET /api/tts/voices` (54 voices)
+- **Config**: `TTS_ENABLED`, `TTS_MODEL_PATH`, `TTS_VOICES_PATH`, `TTS_DEFAULT_VOICE` (af_bella), `TTS_DEFAULT_SPEED`
+- **Model files**: `models/kokoro/` (311MB ONNX + 27MB voices) — git-ignored, download via `scripts/download-tts-model.sh`
+- **Frontend**: `speakText()` in `voice.js` + `overlay.js` tries `/api/tts` first → AudioContext playback, falls back to browser SpeechSynthesis
+- **Dep**: `pip install kokoro-onnx` (pulls onnxruntime, numpy)
+- **Singleton**: `tts_engine` in `deps.py`, conditional on `tts_enabled`
+- **Readiness**: TTS check added (non-required) — shows `tts_available` + `tts_engine` in summary
 
 ## Key Patterns
 - SQLite stores: separate DB file, `threading.Lock`, `asyncio.to_thread`, WAL mode
@@ -134,7 +147,7 @@ Direct bridge patterns (no vision/LLM needed):
 - Autonomy auto-promotion (supervised->guided->autonomous) via success rate
 - Kill switch (Ctrl+Shift+X, UI button, API)
 - Vision agent with confidence gating
-- **Direct bridge fast path** — 9 regex patterns for instant command execution (<1s)
+- **Direct bridge fast path** — 10 regex patterns for instant command execution (<1s)
 - Trajectory-based error learning
 - Multi-turn chat memory with conversation persistence
 - Notification engine with 4 rules (idle, app-switch, milestone, context-insight)
@@ -148,9 +161,18 @@ Direct bridge patterns (no vision/LLM needed):
 - Dark mode, keyboard shortcuts, glassmorphism UI
 - Service control script (`./desktopai.sh start|stop|restart|status`)
 
-## What's Next (Sprint 7+ — see BACKLOG.md)
+## What's Shipped (Sprint 7)
+- **Ollama stability**: Retry with backoff (2 retries, 1s/2s), circuit breaker (3 failures → 30s cooldown)
+- **SSE streaming chat**: `stream: true` on ChatRequest, `chat_stream()` async generator, token-by-token UI
+- **CUA coordinate mode**: `OLLAMA_CUA_MODEL` config, `CUA_AGENT_PROMPT`, x/y click fallback in Rust collector
+- **Kill switch visual feedback**: "stop/kill/cancel/abort" chat command, Tauri `kill-confirmed` event, red flash animations
+- **VisionAgent abort**: Auto-abort after 2 consecutive Ollama failures
+- **SOTA voice research**: `.asif/voice-research.md` — Kokoro-82M recommended for Sprint 8
+
+## What's Shipped (Sprint 8)
+- **Kokoro-82M TTS**: Server-side speech synthesis replacing browser Web Speech API. `POST /api/tts` returns WAV audio, frontend plays via AudioContext with graceful fallback. 54 voices, 24kHz 16-bit PCM. 22 new tests.
+
+## What's Next (Sprint 8+ — see BACKLOG.md)
+- Vision Phase 2: UI-DETR-1 + text LLM split (10-15x speedup) — MIT license, purpose-built for UI detection
 - 3D Blender avatar with WebGL/WebGPU renderer
-- Avatar expandable limbs (context/log/reasoning panels)
-- Avatar marketplace (skins + skill packs)
-- Streaming chat responses (SSE)
 - Natural language multi-step macros
