@@ -37,6 +37,7 @@ from .schemas import (
     WindowEvent,
 )
 from .state import StateStore
+from .tts import TtsEngine
 from .ui_telemetry import UiTelemetryStore
 from .ws import WebSocketHub
 
@@ -130,6 +131,9 @@ action_executor = build_action_executor(
     bridge=bridge,
 )
 runtime_logs = RuntimeLogStore(max_entries=settings.runtime_log_max_entries)
+tts_engine: TtsEngine | None = None
+if settings.tts_enabled:
+    tts_engine = TtsEngine(settings.tts_model_path, settings.tts_voices_path)
 
 
 async def _persist_task_update(task) -> None:

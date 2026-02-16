@@ -18,9 +18,7 @@ function pickVoice() {
   return preferred || voices.find((v) => /^en/i.test(v.lang)) || voices[0];
 }
 
-export function speakText(text) {
-  const clean = (text || "").trim();
-  if (!clean) return;
+function _speakBrowser(text) {
   if (!("speechSynthesis" in window)) {
     setVoiceState("tts unavailable", "warn");
     return;
@@ -29,7 +27,7 @@ export function speakText(text) {
     window.speechSynthesis.cancel();
     appState.currentUtterance = null;
   }
-  const utter = new SpeechSynthesisUtterance(clean);
+  const utter = new SpeechSynthesisUtterance(text);
   const voice = pickVoice();
   if (voice) utter.voice = voice;
   utter.rate = 1.0;
@@ -39,7 +37,7 @@ export function speakText(text) {
     appState.speechActive = true;
     avatar.setSpeaking(true);
     setVoiceState("speaking", "good");
-    queueTelemetry("tts_started", "speech started");
+    queueTelemetry("tts_started", "speech started (browser)");
   };
   utter.onboundary = () => avatar.bump();
   utter.onerror = () => {
@@ -56,6 +54,40 @@ export function speakText(text) {
   };
   appState.currentUtterance = utter;
   window.speechSynthesis.speak(utter);
+}
+
+export async function speakText(text) {
+  const clean = (text || "").trim();
+  if (!clean) return;
+  try {
+    const resp = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: clean }),
+    });
+    if (resp.ok) {
+      const buf = await resp.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const decoded = await ctx.decodeAudioData(buf);
+      const src = ctx.createBufferSource();
+      src.buffer = decoded;
+      src.connect(ctx.destination);
+      appState.speechActive = true;
+      avatar.setSpeaking(true);
+      setVoiceState("speaking", "good");
+      queueTelemetry("tts_started", "speech started (kokoro)");
+      src.onended = () => {
+        appState.speechActive = false;
+        avatar.setSpeaking(false);
+        setVoiceState(appState.recognitionActive ? "listening" : "standby", appState.recognitionActive ? "good" : "neutral");
+        queueTelemetry("tts_completed", "speech completed");
+        ctx.close();
+      };
+      src.start();
+      return;
+    }
+  } catch { /* fall through to browser fallback */ }
+  _speakBrowser(clean);
 }
 
 export function stopMeterLoop() {

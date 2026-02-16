@@ -17,6 +17,7 @@ from ..deps import (
     planner,
     runtime_logs,
     tasks,
+    tts_engine,
     ui_telemetry,
 )
 from ..selftest import run_selftest
@@ -84,6 +85,14 @@ async def get_readiness_status() -> dict:
                 diagnostics=ollama_diagnostics,
             ),
         },
+        {
+            "name": "tts_available",
+            "ok": tts_engine is not None and tts_engine.available,
+            "required": False,
+            "detail": "TTS engine (kokoro-82m) loaded."
+            if tts_engine is not None and tts_engine.available
+            else "TTS engine unavailable — browser fallback active.",
+        },
     ]
 
     ok = all(item["ok"] for item in checks if item.get("required", True))
@@ -116,6 +125,8 @@ async def get_readiness_status() -> dict:
             "ollama_consecutive_failures": ollama_diagnostics.get("consecutive_failures", 0),
             "ollama_circuit_open": ollama_diagnostics.get("circuit_open", False),
             "bridge_connected": bridge.connected,
+            "tts_available": tts_engine is not None and tts_engine.available,
+            "tts_engine": "kokoro-82m" if tts_engine is not None and tts_engine.available else "unavailable",
             "vision_agent_enabled": settings.vision_agent_enabled,
             "required_total": required_total,
             "required_passed": required_passed,

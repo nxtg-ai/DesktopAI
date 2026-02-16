@@ -51,6 +51,9 @@ tools/
 tauri-app/src-tauri/gen/
 tauri-app/src-tauri/.claude/
 
+# TTS model files (large binaries)
+models/
+
 # Runtime databases (not in backend/data/)
 backend/app/events.db
 

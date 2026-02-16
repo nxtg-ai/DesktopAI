@@ -378,7 +378,7 @@ function pickVoice() {
   return voices.find((v) => v.lang.startsWith("en")) || voices[0] || null;
 }
 
-function speakText(text) {
+function _speakBrowser(text) {
   if (!hasSpeechSynthesis || !text) return;
   speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
@@ -418,6 +418,43 @@ function speakText(text) {
   };
 
   speechSynthesis.speak(utterance);
+}
+
+async function speakText(text) {
+  if (!text) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (resp.ok) {
+      const buf = await resp.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const decoded = await ctx.decodeAudioData(buf);
+      const src = ctx.createBufferSource();
+      src.buffer = decoded;
+      src.connect(ctx.destination);
+      speechActive = true;
+      avatar.setSpeaking(true);
+      voiceState.textContent = "speaking";
+      voiceState.className = "voice-pill speaking";
+      src.onended = () => {
+        speechActive = false;
+        avatar.setSpeaking(false);
+        if (!recognitionActive) {
+          voiceState.className = "voice-pill hidden";
+        } else {
+          voiceState.textContent = "listening";
+          voiceState.className = "voice-pill listening";
+        }
+        ctx.close();
+      };
+      src.start();
+      return;
+    }
+  } catch { /* fall through to browser fallback */ }
+  _speakBrowser(text);
 }
 
 // Preload voices

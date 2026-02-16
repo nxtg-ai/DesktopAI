@@ -108,6 +108,12 @@ class Settings:
     ws_max_connections: int = _env_int("WS_MAX_CONNECTIONS", 50)
     collector_heartbeat_interval_s: int = _env_int("COLLECTOR_HEARTBEAT_INTERVAL_S", 30)
 
+    tts_enabled: bool = _env_bool("TTS_ENABLED", True)
+    tts_model_path: str = _env("TTS_MODEL_PATH", "models/kokoro/kokoro-v1.0.onnx")
+    tts_voices_path: str = _env("TTS_VOICES_PATH", "models/kokoro/voices-v1.0.bin")
+    tts_default_voice: str = _env("TTS_DEFAULT_VOICE", "af_bella")
+    tts_default_speed: float = float(_env("TTS_DEFAULT_SPEED", "1.0"))
+
     allowed_origins: List[str] = field(
         default_factory=lambda: [
             origin.strip()

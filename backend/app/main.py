@@ -28,6 +28,7 @@ from .routes.recipes import router as recipes_router
 from .routes.state import router as state_router
 from .routes.tasks import router as tasks_router
 from .routes.telemetry import router as telemetry_router
+from .routes.tts import router as tts_router
 from .routes.ws_route import router as ws_router
 from .runtime_logs import RuntimeLogHandler
 
@@ -131,6 +132,7 @@ app.include_router(ws_router)
 app.include_router(chat_history_router)
 app.include_router(notifications_router)
 app.include_router(recipes_router)
+app.include_router(tts_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -166,3 +168,4 @@ notification_engine = _deps.notification_engine
 personality_adapter = _deps.personality_adapter
 autonomy_promoter = _deps.autonomy_promoter
 vision_runner = _deps.vision_runner
+tts_engine = _deps.tts_engine
