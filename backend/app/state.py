@@ -70,6 +70,27 @@ class StateStore:
         async with self._lock:
             return self._idle, self._idle_since
 
+    async def recent_switches(self, since_s: int = 120) -> List[Dict[str, Any]]:
+        """Return raw foreground switch events from the last ``since_s`` seconds.
+
+        Each dict has ``title``, ``process_exe``, and ``timestamp``.
+        No deduplication — every foreground event within the window is returned.
+        """
+        cutoff = datetime.now(timezone.utc).timestamp() - since_s
+        async with self._lock:
+            result: List[Dict[str, Any]] = []
+            for event in reversed(self._events):
+                if event.type != "foreground":
+                    continue
+                if event.timestamp.timestamp() < cutoff:
+                    continue
+                result.append({
+                    "title": event.title,
+                    "process_exe": event.process_exe,
+                    "timestamp": event.timestamp.isoformat(),
+                })
+            return result
+
     async def session_summary(self) -> Dict[str, Any]:
         async with self._lock:
             return self._compute_session_summary()

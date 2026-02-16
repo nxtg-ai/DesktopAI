@@ -15,9 +15,11 @@ from ..deps import (
     autonomy,
     bridge,
     chat_memory,
+    get_personality_mode,
     llm,
     ollama,
     personality_adapter,
+    set_personality_mode,
     store,
     trajectory_store,
     vision_runner,
@@ -41,7 +43,8 @@ _PERSONALITY_PROMPTS = {
         "You are DesktopAI in co-pilot mode. Be concise and technical. "
         "Use jargon freely. Focus on code, workflows, and productivity. "
         "Skip pleasantries — the user is in flow state. "
-        "Maximum 3-5 bullet points. Skip explanations unless asked."
+        "Maximum 3 bullet points. Never more than 5 sentences total. "
+        "Skip explanations unless asked."
     ),
     "assistant": (
         "You are DesktopAI, an intelligent desktop assistant. "
@@ -50,7 +53,9 @@ _PERSONALITY_PROMPTS = {
     ),
     "operator": (
         "You are DesktopAI in operator mode. "
-        "Never use greetings or pleasantries. Start with the action. "
+        "Never use greetings or pleasantries. "
+        "Never say 'Sure', 'Let me', 'Of course', 'Certainly'. "
+        "Start every response with the action verb. "
         "Use imperative sentences only. Maximum 2-3 sentences. "
         "Treat every message as a command. Execute first, explain only if asked."
     ),
@@ -174,6 +179,24 @@ def _build_context_response(ctx) -> str:
     return " ".join(parts)
 
 
+_VALID_PERSONALITY_MODES = {"copilot", "assistant", "operator"}
+
+
+@router.put("/api/personality")
+async def put_personality_mode(body: dict):  # -> dict | JSONResponse
+    """Update the active personality mode at runtime."""
+    from fastapi.responses import JSONResponse
+
+    mode = body.get("mode", "")
+    if mode not in _VALID_PERSONALITY_MODES:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Invalid mode '{mode}'. Must be one of: {sorted(_VALID_PERSONALITY_MODES)}"},
+        )
+    set_personality_mode(mode)
+    return {"mode": mode}
+
+
 @router.get("/api/personality")
 async def get_personality_status() -> dict:
     """Return current personality mode and auto-adaptation state."""
@@ -181,7 +204,7 @@ async def get_personality_status() -> dict:
     energy = personality_adapter.classify_energy(session)
     recommended = personality_adapter.recommend(session)
     return {
-        "current_mode": settings.personality_mode,
+        "current_mode": get_personality_mode(),
         "auto_adapt_enabled": settings.personality_auto_adapt,
         "session_energy": energy,
         "recommended_mode": recommended,
@@ -326,6 +349,16 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
         conversation_id, "user", message, desktop_context=ctx_dict
     )
 
+    # Personality mode: explicit request > auto-adapt > config default
+    # Computed early so all return paths (greeting, direct, LLM) use it.
+    session = await store.session_summary()
+    if request.personality_mode:
+        mode = request.personality_mode
+    elif settings.personality_auto_adapt:
+        mode = personality_adapter.recommend(session)
+    else:
+        mode = get_personality_mode()
+
     # Greeting fast path: instant response, no LLM call
     if not action_triggered and _is_greeting(message):
         response = random.choice(_GREETING_RESPONSES)
@@ -337,7 +370,7 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
             "action_triggered": False,
             "run_id": None,
             "conversation_id": conversation_id,
-            "personality_mode": settings.personality_mode,
+            "personality_mode": mode,
         }
         if screenshot_b64:
             result["screenshot_b64"] = screenshot_b64
@@ -369,30 +402,21 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
             "action_triggered": True,
             "run_id": None,
             "conversation_id": conversation_id,
-            "personality_mode": settings.personality_mode,
+            "personality_mode": mode,
         }
         if screenshot_b64:
             result["screenshot_b64"] = screenshot_b64
         return result
 
-    # Fetch session summary for enriched context
-    session = await store.session_summary()
-
-    # Personality mode: explicit request > auto-adapt > config default
-    if request.personality_mode:
-        mode = request.personality_mode
-    elif settings.personality_auto_adapt:
-        mode = personality_adapter.recommend(session)
-    else:
-        mode = settings.personality_mode
-
     is_available = await llm.available()
     if is_available:
+        fg_switches = await store.recent_switches(since_s=120)
         llm_messages = _build_llm_messages(
             mode=mode, ctx=ctx, message=message,
             action_triggered=action_triggered, run_id=run_id,
             session=session, history=history,
             recent_events=(await store.snapshot())[1],
+            recent_switches=fg_switches,
         )
 
         # SSE streaming branch
@@ -429,6 +453,9 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
                 result["screenshot_b64"] = screenshot_b64
             return result
 
+    # Fetch recent foreground switches for context enrichment
+    recent_apps = await store.recent_switches(since_s=120)
+
     if action_triggered:
         response = f"Got it — I've started working on: **{message}**."
         if ctx:
@@ -446,6 +473,7 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
         "run_id": run_id,
         "conversation_id": conversation_id,
         "personality_mode": mode,
+        "recent_apps": recent_apps,
     }
     if screenshot_b64:
         result["screenshot_b64"] = screenshot_b64
@@ -462,6 +490,7 @@ def _build_llm_messages(
     session: dict,
     history: list,
     recent_events: list,
+    recent_switches: Optional[list] = None,
 ) -> list[dict]:
     """Build the multi-turn messages array for the LLM call."""
     llm_messages: list[dict] = []
@@ -479,6 +508,14 @@ def _build_llm_messages(
                 parts.append(f"App: {ctx.process_exe}")
             if parts:
                 system_parts.append("\n" + ". ".join(parts) + ".")
+    if recent_switches:
+        switch_lines = [
+            f"{s['process_exe']}: {s['title']}" for s in recent_switches
+        ]
+        if switch_lines:
+            system_parts.append(
+                "\nRECENTLY OPENED (last 2 minutes): " + "; ".join(switch_lines)
+            )
     if recent_events:
         seen: set[str] = set()
         recent_apps: list[str] = []

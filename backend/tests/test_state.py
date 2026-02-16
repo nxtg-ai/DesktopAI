@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.schemas import WindowEvent
 from app.state import StateStore
@@ -106,3 +106,64 @@ def test_snapshot_returns_copies_not_internal_references():
     assert events_again
     assert current_again.title == "Immutable Snapshot"
     assert events_again[0].title == "Immutable Snapshot"
+
+
+def test_recent_switches_returns_within_window():
+    """recent_switches returns only foreground events within the time window."""
+    store = StateStore(max_events=20)
+    now = datetime.now(timezone.utc)
+
+    # Old event — 5 minutes ago, outside default 120s window
+    old_event = WindowEvent(
+        type="foreground",
+        hwnd="0x10",
+        title="Old App",
+        process_exe="old.exe",
+        pid=10,
+        timestamp=now - timedelta(seconds=300),
+        source="test",
+    )
+    # Recent event — 30 seconds ago, inside 120s window
+    recent_event = WindowEvent(
+        type="foreground",
+        hwnd="0x11",
+        title="Recent App",
+        process_exe="recent.exe",
+        pid=11,
+        timestamp=now - timedelta(seconds=30),
+        source="test",
+    )
+    # Very recent event — 5 seconds ago
+    very_recent_event = WindowEvent(
+        type="foreground",
+        hwnd="0x12",
+        title="Very Recent App",
+        process_exe="veryrecent.exe",
+        pid=12,
+        timestamp=now - timedelta(seconds=5),
+        source="test",
+    )
+
+    asyncio.run(store.record(old_event))
+    asyncio.run(store.record(recent_event))
+    asyncio.run(store.record(very_recent_event))
+
+    switches = asyncio.run(store.recent_switches(since_s=120))
+    assert len(switches) == 2
+    # Should contain recent and very recent, not old
+    titles = [s["title"] for s in switches]
+    assert "Recent App" in titles
+    assert "Very Recent App" in titles
+    assert "Old App" not in titles
+    # Each dict should have the expected keys
+    for s in switches:
+        assert "title" in s
+        assert "process_exe" in s
+        assert "timestamp" in s
+
+
+def test_recent_switches_empty_when_no_events():
+    """Empty store returns empty list from recent_switches."""
+    store = StateStore(max_events=10)
+    switches = asyncio.run(store.recent_switches(120))
+    assert switches == []

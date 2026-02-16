@@ -54,6 +54,22 @@ PLANNER_SOURCE_RUNTIME_OVERRIDE = "runtime_override"
 planner_mode_source: str = PLANNER_SOURCE_CONFIG_DEFAULT
 ollama_model_source: str = PLANNER_SOURCE_CONFIG_DEFAULT
 
+# Mutable personality mode override (None = use config default)
+_active_personality_mode: str | None = None
+
+
+def get_personality_mode() -> str:
+    """Return the active personality mode, falling back to config default."""
+    if _active_personality_mode is not None:
+        return _active_personality_mode
+    return settings.personality_mode
+
+
+def set_personality_mode(mode: str) -> None:
+    """Set the active personality mode at runtime."""
+    global _active_personality_mode
+    _active_personality_mode = mode
+
 # ── Singletons ────────────────────────────────────────────────────────────
 
 store = StateStore(max_events=settings.event_log_max)

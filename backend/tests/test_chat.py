@@ -912,3 +912,39 @@ async def test_stop_command_works_without_bridge(client):
     data = resp.json()
     assert data["source"] == "direct"
     assert "No actions" in data["response"]
+
+
+# ── Recent apps context tests ────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_context_response_includes_recent_apps(client):
+    """Context fallback response includes recent_apps field when foreground events exist."""
+    from app.schemas import WindowEvent
+
+    now = datetime.now(timezone.utc)
+
+    # Seed two recent foreground events
+    e1 = WindowEvent(
+        type="foreground", hwnd="0x1", title="Document.docx - Word",
+        process_exe="WINWORD.EXE", pid=100,
+        timestamp=now,
+        source="test",
+    )
+    e2 = WindowEvent(
+        type="foreground", hwnd="0x2", title="Inbox - Outlook",
+        process_exe="OUTLOOK.EXE", pid=200,
+        timestamp=now,
+        source="test",
+    )
+    await store.record(e1)
+    await store.record(e2)
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post("/api/chat", json={"message": "what am I working on?"})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "recent_apps" in data
+    assert isinstance(data["recent_apps"], list)
+    assert len(data["recent_apps"]) >= 1
