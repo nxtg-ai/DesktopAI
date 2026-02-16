@@ -160,8 +160,25 @@ fn handle_click(cmd: &Command, config: &Config) -> CommandResult {
     let name = cmd.parameters.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let automation_id = cmd.parameters.get("automation_id").and_then(|v| v.as_str()).unwrap_or("");
 
+    // If no UIA identifier provided, fall back to x/y pixel coordinates
     if name.is_empty() && automation_id.is_empty() {
-        return CommandResult::failure(&cmd.command_id, "click requires 'name' or 'automation_id' parameter");
+        let x = cmd.parameters.get("x").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+        let y = cmd.parameters.get("y").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+        if x < 0 || y < 0 {
+            return CommandResult::failure(&cmd.command_id, "click requires 'name', 'automation_id', or 'x'/'y' parameters");
+        }
+        click_at(x, y);
+        let mut result = HashMap::new();
+        result.insert("x".to_string(), serde_json::json!(x));
+        result.insert("y".to_string(), serde_json::json!(y));
+        result.insert("method".to_string(), serde_json::Value::String("coordinate".to_string()));
+        let mut cmd_result = CommandResult::success(&cmd.command_id, result);
+        cmd_result.screenshot_b64 = if config.enable_screenshot {
+            crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0))
+        } else {
+            None
+        };
+        return cmd_result;
     }
 
     // Try UIA Invoke first
@@ -306,6 +323,15 @@ fn click_at(x: i32, y: i32) {
 
 #[cfg(not(windows))]
 fn handle_click(cmd: &Command, _config: &Config) -> CommandResult {
+    let name = cmd.parameters.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let automation_id = cmd.parameters.get("automation_id").and_then(|v| v.as_str()).unwrap_or("");
+    if name.is_empty() && automation_id.is_empty() {
+        let x = cmd.parameters.get("x").and_then(|v| v.as_i64()).unwrap_or(-1);
+        let y = cmd.parameters.get("y").and_then(|v| v.as_i64()).unwrap_or(-1);
+        if x < 0 || y < 0 {
+            return CommandResult::failure(&cmd.command_id, "click requires 'name', 'automation_id', or 'x'/'y' parameters");
+        }
+    }
     CommandResult::failure(&cmd.command_id, "click requires Windows")
 }
 
@@ -1061,5 +1087,30 @@ mod tests {
             assert!(!result.ok, "{action} should fail on non-Windows");
             assert!(result.error.as_ref().unwrap().contains("requires Windows"));
         }
+    }
+
+    #[test]
+    fn test_click_xy_command_parse() {
+        let json = r#"{"command_id": "c1", "action": "click", "parameters": {"x": 300, "y": 450}}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert_eq!(cmd.action, "click");
+        assert_eq!(cmd.parameters["x"], 300);
+        assert_eq!(cmd.parameters["y"], 450);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_click_missing_all_params_returns_error() {
+        let config = Config::from_env();
+        let cmd = Command {
+            command_id: "test-click".to_string(),
+            action: "click".to_string(),
+            parameters: HashMap::new(),
+            timeout_ms: 5000,
+        };
+        let result = execute_command(&cmd, &config);
+        assert!(!result.ok);
+        assert!(result.error.as_ref().unwrap().contains("click requires"));
+        assert!(result.error.as_ref().unwrap().contains("x")); // mentions x/y
     }
 }

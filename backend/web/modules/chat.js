@@ -45,6 +45,41 @@ function appendChatMessage(role, text, meta = {}) {
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 }
 
+function appendStreamingMessage() {
+  if (chatWelcomeEl) chatWelcomeEl.style.display = "none";
+  const msg = document.createElement("div");
+  msg.className = "chat-msg agent streaming";
+  const bubble = document.createElement("div");
+  bubble.className = "chat-msg-bubble";
+  msg.appendChild(bubble);
+  chatMessagesEl.appendChild(msg);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  return { bubble, msgEl: msg };
+}
+
+function finalizeStreamingMessage(msgEl, meta) {
+  msgEl.classList.remove("streaming");
+  const badges = document.createElement("div");
+  badges.className = "chat-msg-badges";
+  if (meta.source) {
+    const badge = document.createElement("span");
+    badge.className = "chat-badge source";
+    badge.textContent = meta.source;
+    badges.appendChild(badge);
+  }
+  if (meta.personality_mode) {
+    const badge = document.createElement("span");
+    badge.className = "chat-badge personality";
+    badge.textContent = meta.personality_mode;
+    badges.appendChild(badge);
+  }
+  if (badges.childNodes.length > 0) msgEl.appendChild(badges);
+  const metaEl = document.createElement("div");
+  metaEl.className = "chat-msg-meta";
+  metaEl.textContent = formatTime(new Date().toISOString());
+  msgEl.appendChild(metaEl);
+}
+
 function showChatTyping() {
   const el = document.createElement("div");
   el.className = "chat-typing";
@@ -157,9 +192,63 @@ export async function sendChatMessage(text) {
   queueTelemetry("chat_sent", "chat message sent", { chars: message.length });
   try {
     const personality = (personalityModeEl && personalityModeEl.value) || "assistant";
-    const payload = { message, allow_actions: true, personality_mode: personality };
+    const payload = { message, allow_actions: true, personality_mode: personality, stream: true };
     if (appState.conversationId) payload.conversation_id = appState.conversationId;
     const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+
+    // SSE streaming response
+    if (resp.ok && resp.headers.get("content-type")?.includes("text/event-stream")) {
+      hideChatTyping();
+      const { bubble, msgEl } = appendStreamingMessage();
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalMeta = {};
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.error) {
+              bubble.textContent += " [Error: " + event.error + "]";
+              break;
+            }
+            if (event.token) bubble.textContent += event.token;
+            if (event.done) {
+              finalMeta = event;
+              break;
+            }
+          } catch { /* skip bad JSON */ }
+        }
+        chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+      }
+      // Add badges from final metadata
+      finalizeStreamingMessage(msgEl, finalMeta);
+      if (finalMeta.conversation_id) {
+        appState.conversationId = finalMeta.conversation_id;
+        const titleEl = document.getElementById("chat-conversation-title");
+        if (titleEl && !titleEl.dataset.set) {
+          titleEl.textContent = message.length > 40 ? message.slice(0, 40) + "\u2026" : message;
+          titleEl.dataset.set = "1";
+        }
+      }
+      chatStatusEl.textContent = "ready";
+      chatStatusEl.dataset.tone = "good";
+      if (finalMeta.desktop_context) updateChatContextBar(finalMeta.desktop_context);
+      if (finalMeta.action_triggered && finalMeta.run_id) {
+        appState.activeRunId = finalMeta.run_id;
+      }
+      queueTelemetry("chat_received", "chat response streamed", { source: "ollama", streaming: true, chars: (bubble.textContent || "").length });
+      return;
+    }
+
+    // Non-streaming JSON response (greeting, direct, fallback)
     const data = await resp.json();
     hideChatTyping();
     if (!resp.ok) {

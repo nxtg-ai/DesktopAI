@@ -113,6 +113,8 @@ async def get_readiness_status() -> dict:
             "ollama_last_check_source": ollama_diagnostics.get("last_check_source"),
             "ollama_last_http_status": ollama_diagnostics.get("last_http_status"),
             "ollama_last_error": ollama_diagnostics.get("last_error"),
+            "ollama_consecutive_failures": ollama_diagnostics.get("consecutive_failures", 0),
+            "ollama_circuit_open": ollama_diagnostics.get("circuit_open", False),
             "bridge_connected": bridge.connected,
             "vision_agent_enabled": settings.vision_agent_enabled,
             "required_total": required_total,

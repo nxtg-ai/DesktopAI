@@ -1,5 +1,6 @@
 """Tests for the /api/chat conversational agent endpoint."""
 
+import json
 import os
 
 os.environ.setdefault("BACKEND_DB_PATH", ":memory:")
@@ -8,7 +9,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.main import app, bridge, chat_memory, ollama, store
+from app.main import app, autonomy, bridge, chat_memory, ollama, store, vision_runner
 from httpx import ASGITransport, AsyncClient
 
 
@@ -479,7 +480,7 @@ async def test_greeting_fast_path(client):
     event = _seed_event()
     await store.record(event)
 
-    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True) as mock_avail, \
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
          patch.object(ollama, "chat", new_callable=AsyncMock) as mock_chat:
         resp = await client.post("/api/chat", json={"message": "hello"})
 
@@ -496,7 +497,6 @@ async def test_greeting_fast_path(client):
 @pytest.mark.anyio
 async def test_greeting_with_punctuation(client):
     """'hey!' should still match the greeting fast path."""
-    resp_data = None
     with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
          patch.object(ollama, "chat", new_callable=AsyncMock) as mock_chat:
         resp = await client.post("/api/chat", json={"message": "hey!"})
@@ -645,3 +645,270 @@ async def test_direct_right_click(client):
     mock_exec.assert_called_once_with(
         "right_click", {"name": "Desktop"}, timeout_s=5,
     )
+
+
+# ── SSE Streaming tests ─────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_stream_false_returns_json(client):
+    """stream=false returns regular JSON, not SSE."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", new_callable=AsyncMock, return_value="Hello from LLM"):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "what am I doing?", "stream": False},
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    data = resp.json()
+    assert data["source"] == "ollama"
+    assert data["response"] == "Hello from LLM"
+
+
+@pytest.mark.anyio
+async def test_stream_true_returns_sse(client):
+    """stream=true returns text/event-stream with SSE events."""
+    event = _seed_event()
+    await store.record(event)
+
+    async def mock_stream(messages, **kwargs):
+        yield {"token": "Hello", "done": False}
+        yield {"token": " world", "done": False}
+        yield {"token": "", "done": True}
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat_stream", side_effect=mock_stream):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "what am I doing?", "stream": True},
+        )
+
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+    # Parse SSE events
+    lines = resp.text.strip().split("\n")
+    data_lines = [ln for ln in lines if ln.startswith("data: ")]
+    assert len(data_lines) >= 2  # At least one token + one done event
+    # Last event should have done=True
+    last = json.loads(data_lines[-1].replace("data: ", ""))
+    assert last["done"] is True
+    assert "conversation_id" in last
+
+
+@pytest.mark.anyio
+async def test_greeting_ignores_stream_flag(client):
+    """Greetings always return JSON even when stream=true."""
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", new_callable=AsyncMock) as mock_chat:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "hello", "stream": True},
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    data = resp.json()
+    assert data["source"] == "greeting"
+    mock_chat.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_direct_command_ignores_stream_flag(client):
+    """Direct bridge commands always return JSON even when stream=true."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "open notepad", "allow_actions": True, "stream": True},
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    data = resp.json()
+    assert data["source"] == "direct"
+
+
+@pytest.mark.anyio
+async def test_stream_final_event_has_metadata(client):
+    """Final SSE event includes conversation_id, source, personality_mode."""
+    event = _seed_event()
+    await store.record(event)
+
+    async def mock_stream(messages, **kwargs):
+        yield {"token": "Answer", "done": False}
+        yield {"token": "", "done": True}
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat_stream", side_effect=mock_stream):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "what am I doing?", "stream": True},
+        )
+
+    assert resp.status_code == 200
+    lines = resp.text.strip().split("\n")
+    data_lines = [ln for ln in lines if ln.startswith("data: ")]
+    last = json.loads(data_lines[-1].replace("data: ", ""))
+    assert last["done"] is True
+    assert last["source"] == "ollama"
+    assert "conversation_id" in last
+    assert "personality_mode" in last
+
+
+@pytest.mark.anyio
+async def test_stream_saves_to_chat_memory(client):
+    """Streaming response saves accumulated tokens to chat memory."""
+    event = _seed_event()
+    await store.record(event)
+
+    async def mock_stream(messages, **kwargs):
+        yield {"token": "Hello", "done": False}
+        yield {"token": " from", "done": False}
+        yield {"token": " stream", "done": False}
+        yield {"token": "", "done": True}
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat_stream", side_effect=mock_stream):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "test streaming", "stream": True},
+        )
+
+    assert resp.status_code == 200
+    # Extract conversation_id from final event
+    lines = resp.text.strip().split("\n")
+    data_lines = [ln for ln in lines if ln.startswith("data: ")]
+    last = json.loads(data_lines[-1].replace("data: ", ""))
+    cid = last.get("conversation_id")
+    assert cid
+
+    # Check that the response was saved
+    messages = await chat_memory.get_messages(cid, limit=10)
+    assistant_msgs = [m for m in messages if m["role"] == "assistant"]
+    assert len(assistant_msgs) >= 1
+    assert "Hello from stream" in assistant_msgs[-1]["content"]
+
+
+@pytest.mark.anyio
+async def test_stream_error_event(client):
+    """Stream error is sent as an SSE event with error field."""
+    event = _seed_event()
+    await store.record(event)
+
+    async def mock_stream(messages, **kwargs):
+        yield {"token": "", "done": True, "error": "circuit breaker open"}
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat_stream", side_effect=mock_stream):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "test error", "stream": True},
+        )
+
+    assert resp.status_code == 200
+    lines = resp.text.strip().split("\n")
+    data_lines = [ln for ln in lines if ln.startswith("data: ")]
+    # Should have error event
+    events = [json.loads(ln.replace("data: ", "")) for ln in data_lines]
+    error_events = [e for e in events if e.get("error")]
+    assert len(error_events) >= 1
+
+
+@pytest.mark.anyio
+async def test_stream_fallback_to_json_when_ollama_unavailable(client):
+    """When Ollama is down, stream=true falls back to JSON context response."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "what am I doing?", "stream": True},
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    data = resp.json()
+    assert data["source"] == "context"
+
+
+# ── Kill switch chat command tests ──────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_stop_command_matches_direct_pattern(client):
+    """'stop' command matches the cancel-all direct pattern."""
+    from app.routes.agent import _match_direct_pattern
+
+    for word in ["stop", "kill", "cancel", "abort", "stop all", "kill everything", "cancel actions"]:
+        result = _match_direct_pattern(word)
+        assert result is not None, f"'{word}' should match cancel pattern"
+        assert result[0] == "_cancel_all"
+
+
+@pytest.mark.anyio
+async def test_stop_command_returns_direct_source(client):
+    """'stop' command returns source='direct' response."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[]), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "stop"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    assert data["action_triggered"] is True
+
+
+@pytest.mark.anyio
+async def test_stop_command_calls_cancel(client):
+    """'stop' command actually cancels running actions."""
+    event = _seed_event()
+    await store.record(event)
+
+    mock_run = MagicMock()
+    mock_run.run_id = "run-1"
+    mock_run.status = "running"
+
+    with patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[mock_run]), \
+         patch.object(autonomy, "cancel", new_callable=AsyncMock) as mock_cancel, \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "kill all"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Killed 1" in data["response"]
+    mock_cancel.assert_called_once_with("run-1")
+
+
+@pytest.mark.anyio
+async def test_stop_command_works_without_bridge(client):
+    """'stop' command works even when bridge is disconnected."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(type(bridge), "connected", new_callable=lambda: property(lambda self: False)), \
+         patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[]), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "stop"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    assert "No actions" in data["response"]

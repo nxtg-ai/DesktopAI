@@ -1,11 +1,13 @@
 """Agent, vision, chat, and bridge routes."""
 
+import json
 import logging
 import random
 import re
 from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, HTTPException
+from starlette.responses import StreamingResponse
 
 from ..config import settings
 from ..deps import (
@@ -83,6 +85,9 @@ _DIRECT_PATTERNS: list[tuple[re.Pattern, str, Callable[[re.Match], dict[str, Any
      "_type_in_window", lambda m: {"text": m.group(1), "window": m.group(2).strip()}),
     (re.compile(r"^type\s+['\"]?(.+?)['\"]?\s*$", re.I),
      "type_text", lambda m: {"text": m.group(1).strip()}),
+    # Kill switch: stop/kill/cancel/abort all actions
+    (re.compile(r"^(?:stop|kill|cancel|abort)(?:\s+(?:all|everything|actions?))?$", re.I),
+     "_cancel_all", lambda m: {}),
 ]
 
 
@@ -96,19 +101,45 @@ def _match_direct_pattern(message: str) -> Optional[tuple[str, dict[str, Any]]]:
     return None
 
 
+async def _cancel_all_runs() -> int:
+    """Cancel all in-progress autonomy and vision runs. Returns count cancelled."""
+    cancelled = 0
+    for run in await autonomy.list_runs(limit=100):
+        if run.status in {"running", "waiting_approval"}:
+            try:
+                await autonomy.cancel(run.run_id)
+                cancelled += 1
+            except Exception:
+                pass
+    for run in await vision_runner.list_runs(limit=100):
+        if run.status in {"running", "waiting_approval"}:
+            try:
+                await vision_runner.cancel(run.run_id)
+                cancelled += 1
+            except Exception:
+                pass
+    return cancelled
+
+
 async def _try_direct_command(message: str) -> Optional[dict]:
     """Try to match message to a direct bridge command.
 
     Returns a result dict on match, or None to fall through to VisionAgent.
     """
-    if not bridge.connected:
-        return None
-
     matched = _match_direct_pattern(message)
     if not matched:
         return None
 
     action, params = matched
+
+    # Cancel-all doesn't need the bridge
+    if action == "_cancel_all":
+        cancelled = await _cancel_all_runs()
+        return {"action": action, "parameters": params, "result": {"cancelled": cancelled}}
+
+    if not bridge.connected:
+        return None
+
     if action == "_type_in_window":
         await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
         result = await bridge.execute("type_text", {"text": params["text"]}, timeout_s=5)
@@ -172,17 +203,22 @@ def _build_vision_agent(max_iterations: int = 0):
     """Build a VisionAgent with current settings."""
     from ..vision_agent import VisionAgent
 
+    cua_model = settings.ollama_cua_model.strip()
+    use_coordinates = bool(cua_model)
+    vision_model = cua_model if use_coordinates else (settings.ollama_vision_model or None)
+
     return VisionAgent(
         bridge=bridge,
         ollama=ollama,
         max_iterations=max_iterations or settings.vision_agent_max_iterations,
-        vision_model=settings.ollama_vision_model or None,
+        vision_model=vision_model,
         min_confidence=settings.vision_agent_min_confidence,
         max_consecutive_errors=settings.vision_agent_max_consecutive_errors,
         error_backoff_ms=settings.vision_agent_error_backoff_ms,
         trajectory_store=trajectory_store,
         trajectory_max_chars=settings.trajectory_context_max_chars,
         trajectory_max_results=settings.trajectory_context_max_results,
+        use_coordinates=use_coordinates,
     )
 
 
@@ -202,7 +238,7 @@ async def run_vision_agent(request: AutonomyStartRequest) -> dict:
 
 
 @router.post("/api/chat")
-async def chat_endpoint(request: ChatRequest) -> dict:
+async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
     """Process a chat message with desktop context and optional action execution."""
     from ..desktop_context import DesktopContext
 
@@ -255,7 +291,9 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     direct_match = _match_direct_pattern(message) if request.allow_actions else None
     if not action_triggered and direct_match:
         action_triggered = True
-        if bridge.connected:
+        # _cancel_all works without bridge; other commands need it
+        needs_bridge = direct_match[0] != "_cancel_all"
+        if not needs_bridge or bridge.connected:
             try:
                 direct_result = await _try_direct_command(message)
             except Exception as exc:
@@ -313,9 +351,14 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         else:
             action, params = "unknown", {}
         friendly = action.replace("_", " ")
-        if action == "_type_in_window":
+        if action == "_cancel_all":
+            count = direct_result["result"]["cancelled"] if direct_result else 0
+            response = f"Killed {count} running action(s)." if count > 0 else "No actions were running."
+        elif action == "_type_in_window":
             friendly = f"typed in {params.get('window', '')}"
-        response = f"Done — {friendly}."
+            response = f"Done — {friendly}."
+        else:
+            response = f"Done — {friendly}."
         await chat_memory.save_message(conversation_id, "assistant", response)
         result = {
             "response": response,
@@ -343,73 +386,27 @@ async def chat_endpoint(request: ChatRequest) -> dict:
 
     is_available = await llm.available()
     if is_available:
-        # Build multi-turn messages array
-        llm_messages = []
-        system_parts = [
-            _PERSONALITY_PROMPTS.get(mode, _PERSONALITY_PROMPTS["assistant"]),
-        ]
-        if ctx:
-            if action_triggered or _is_action_intent(message):
-                # Full context for action commands
-                system_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
-            else:
-                # Lightweight context for conversation — no UIA tree dump
-                parts = []
-                if ctx.window_title:
-                    parts.append(f"User is in: {ctx.window_title}")
-                if ctx.process_exe:
-                    parts.append(f"App: {ctx.process_exe}")
-                if parts:
-                    system_parts.append("\n" + ". ".join(parts) + ".")
-        # Include recent app transitions so LLM knows what user was doing
-        _, recent_events = await store.snapshot()
-        if recent_events:
-            seen = set()
-            recent_apps = []
-            for ev in reversed(recent_events[-10:]):
-                key = f"{ev.process_exe}|{ev.title}"
-                if key not in seen:
-                    seen.add(key)
-                    recent_apps.append(f"{ev.process_exe}: {ev.title}")
-                if len(recent_apps) >= 5:
-                    break
-            if recent_apps:
-                system_parts.append(
-                    "\nRecent apps (most recent first): " + "; ".join(recent_apps)
-                )
-        if session.get("app_switches", 0) > 0:
-            top = ", ".join(
-                f"{a['process']} ({a['dwell_s']}s)"
-                for a in session.get("top_apps", [])[:3]
-            )
-            system_parts.append(
-                f"\nSession: {session['app_switches']} app switches, "
-                f"{session['unique_apps']} unique apps, "
-                f"session {round(session.get('session_duration_s', 0) / 60, 1)} min. "
-                f"Top: {top}"
-            )
-        if action_triggered and run_id:
-            # Async VisionAgent / orchestrator — still in progress
-            system_parts.append(
-                f"\nAn autonomous agent is now working on: {message}. "
-                "Tell the user the task is IN PROGRESS — do NOT say it is done or complete. "
-                "Say something like 'Working on it now' or 'I'm on it'. "
-                "The agent runs in the background and results will appear shortly."
-            )
-        elif action_triggered:
-            # Direct bridge command — already executed
-            system_parts.append(
-                f"\nI just executed a direct desktop command for: {message}. "
-                "Confirm what you did briefly."
-            )
-        llm_messages.append({"role": "system", "content": "\n".join(system_parts)})
+        llm_messages = _build_llm_messages(
+            mode=mode, ctx=ctx, message=message,
+            action_triggered=action_triggered, run_id=run_id,
+            session=session, history=history,
+            recent_events=(await store.snapshot())[1],
+        )
 
-        # Add conversation history (excluding the just-saved user message)
-        for msg in history:
-            llm_messages.append({"role": msg["role"], "content": msg["content"]})
-
-        # Add new user message
-        llm_messages.append({"role": "user", "content": message})
+        # SSE streaming branch
+        if request.stream:
+            return StreamingResponse(
+                _stream_chat_response(
+                    llm_messages=llm_messages,
+                    conversation_id=conversation_id,
+                    ctx_dict=ctx_dict,
+                    action_triggered=action_triggered,
+                    run_id=run_id,
+                    mode=mode,
+                    screenshot_b64=screenshot_b64,
+                ),
+                media_type="text/event-stream",
+            )
 
         llm_response = await llm.chat(llm_messages)
         if llm_response and llm_response.strip():
@@ -451,3 +448,154 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     if screenshot_b64:
         result["screenshot_b64"] = screenshot_b64
     return result
+
+
+def _build_llm_messages(
+    *,
+    mode: str,
+    ctx,
+    message: str,
+    action_triggered: bool,
+    run_id: Optional[str],
+    session: dict,
+    history: list,
+    recent_events: list,
+) -> list[dict]:
+    """Build the multi-turn messages array for the LLM call."""
+    llm_messages: list[dict] = []
+    system_parts = [
+        _PERSONALITY_PROMPTS.get(mode, _PERSONALITY_PROMPTS["assistant"]),
+    ]
+    if ctx:
+        if action_triggered or _is_action_intent(message):
+            system_parts.append(f"\nCurrent desktop state:\n{ctx.to_llm_prompt()}")
+        else:
+            parts = []
+            if ctx.window_title:
+                parts.append(f"User is in: {ctx.window_title}")
+            if ctx.process_exe:
+                parts.append(f"App: {ctx.process_exe}")
+            if parts:
+                system_parts.append("\n" + ". ".join(parts) + ".")
+    if recent_events:
+        seen: set[str] = set()
+        recent_apps: list[str] = []
+        for ev in reversed(recent_events[-10:]):
+            key = f"{ev.process_exe}|{ev.title}"
+            if key not in seen:
+                seen.add(key)
+                recent_apps.append(f"{ev.process_exe}: {ev.title}")
+            if len(recent_apps) >= 5:
+                break
+        if recent_apps:
+            system_parts.append(
+                "\nRecent apps (most recent first): " + "; ".join(recent_apps)
+            )
+    if session.get("app_switches", 0) > 0:
+        top = ", ".join(
+            f"{a['process']} ({a['dwell_s']}s)"
+            for a in session.get("top_apps", [])[:3]
+        )
+        system_parts.append(
+            f"\nSession: {session['app_switches']} app switches, "
+            f"{session['unique_apps']} unique apps, "
+            f"session {round(session.get('session_duration_s', 0) / 60, 1)} min. "
+            f"Top: {top}"
+        )
+    if action_triggered and run_id:
+        system_parts.append(
+            f"\nAn autonomous agent is now working on: {message}. "
+            "Tell the user the task is IN PROGRESS — do NOT say it is done or complete. "
+            "Say something like 'Working on it now' or 'I'm on it'. "
+            "The agent runs in the background and results will appear shortly."
+        )
+    elif action_triggered:
+        system_parts.append(
+            f"\nI just executed a direct desktop command for: {message}. "
+            "Confirm what you did briefly."
+        )
+    llm_messages.append({"role": "system", "content": "\n".join(system_parts)})
+
+    for msg in history:
+        llm_messages.append({"role": msg["role"], "content": msg["content"]})
+
+    llm_messages.append({"role": "user", "content": message})
+    return llm_messages
+
+
+async def _stream_chat_response(
+    *,
+    llm_messages: list[dict],
+    conversation_id: str,
+    ctx_dict: Optional[dict],
+    action_triggered: bool,
+    run_id: Optional[str],
+    mode: str,
+    screenshot_b64: Optional[str],
+):
+    """Async generator that yields SSE events from Ollama streaming."""
+    accumulated = []
+    had_error = False
+
+    try:
+        async for chunk in ollama.chat_stream(llm_messages):
+            token = chunk.get("token", "")
+            done = chunk.get("done", False)
+            error = chunk.get("error")
+
+            if error:
+                had_error = True
+                event = {"token": "", "done": True, "error": error}
+                yield f"data: {json.dumps(event)}\n\n"
+                return
+
+            if token:
+                accumulated.append(token)
+
+            if not done:
+                event = {"token": token, "done": False}
+                yield f"data: {json.dumps(event)}\n\n"
+            else:
+                # Final event with metadata
+                full_response = "".join(accumulated).strip()
+                if full_response:
+                    await chat_memory.save_message(
+                        conversation_id, "assistant", full_response,
+                    )
+                final: dict[str, Any] = {
+                    "token": "",
+                    "done": True,
+                    "conversation_id": conversation_id,
+                    "source": "ollama",
+                    "desktop_context": ctx_dict,
+                    "action_triggered": action_triggered,
+                    "run_id": run_id,
+                    "personality_mode": mode,
+                }
+                if screenshot_b64:
+                    final["screenshot_b64"] = screenshot_b64
+                yield f"data: {json.dumps(final)}\n\n"
+                return
+
+    except Exception as exc:
+        logger.warning("Stream error: %s", exc)
+        if not had_error:
+            event = {"token": "", "done": True, "error": str(exc)}
+            yield f"data: {json.dumps(event)}\n\n"
+
+    # If we get here without a done event, send final
+    full_response = "".join(accumulated).strip()
+    if full_response:
+        await chat_memory.save_message(
+            conversation_id, "assistant", full_response,
+        )
+    final_event: dict[str, Any] = {
+        "token": "",
+        "done": True,
+        "conversation_id": conversation_id,
+        "source": "ollama",
+        "action_triggered": action_triggered,
+        "run_id": run_id,
+        "personality_mode": mode,
+    }
+    yield f"data: {json.dumps(final_event)}\n\n"

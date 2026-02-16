@@ -48,6 +48,44 @@ RULES:
 
 Your action:"""
 
+CUA_AGENT_PROMPT = """\
+You are DesktopAI, a computer-use agent. You can see the user's screen and control their Windows desktop using pixel coordinates.
+
+OBJECTIVE: {objective}
+
+AVAILABLE ACTIONS (respond with exactly one JSON object):
+- {{"action": "click", "parameters": {{"x": 450, "y": 320}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "double_click", "parameters": {{"x": 450, "y": 320}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "right_click", "parameters": {{"x": 450, "y": 320}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "type_text", "parameters": {{"text": "content to type"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "send_keys", "parameters": {{"keys": "ctrl+c"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "open_application", "parameters": {{"application": "notepad.exe"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "focus_window", "parameters": {{"title": "Window Title"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "scroll", "parameters": {{"direction": "down", "amount": 3}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "wait", "parameters": {{}}, "reasoning": "waiting for UI to update", "confidence": 1.0}}
+- {{"action": "done", "parameters": {{}}, "reasoning": "objective completed because...", "confidence": 0.95}}
+
+CURRENT OBSERVATION:
+Window: {window_title}
+Process: {process_exe}
+{uia_section}
+
+{history_section}
+
+{trajectory_section}
+RULES:
+1. Respond with ONLY a JSON object. No markdown, no explanation.
+2. For click/double_click/right_click, use pixel coordinates (x, y) from the screenshot.
+3. Each action should move you closer to the objective.
+4. IMPORTANT: After each action, check if the objective has ALREADY been achieved. If yes, respond with action "done".
+5. Use "wait" if you need the UI to settle after a previous action.
+6. If stuck after 3 attempts, try a different approach.
+7. Include a "confidence" field (0.0 to 1.0) indicating how sure you are this action is correct.
+8. Do NOT repeat the same action more than twice.
+9. Before typing text, ALWAYS use "focus_window" first.
+
+Your action:"""
+
 
 @dataclass(frozen=True)
 class AgentObservation:
@@ -87,6 +125,7 @@ class VisionAgent:
         trajectory_store=None,
         trajectory_max_chars: int = 1500,
         trajectory_max_results: int = 3,
+        use_coordinates: bool = False,
     ) -> None:
         self._bridge = bridge
         self._ollama = ollama
@@ -98,6 +137,7 @@ class VisionAgent:
         self._trajectory_store = trajectory_store
         self._trajectory_max_chars = trajectory_max_chars
         self._trajectory_max_results = trajectory_max_results
+        self._use_coordinates = use_coordinates
 
     async def run(
         self,
@@ -108,6 +148,7 @@ class VisionAgent:
 
         steps: List[AgentStep] = []
         consecutive_errors = 0
+        consecutive_ollama_failures = 0
 
         # Query trajectory memory once at start
         trajectory_context = ""
@@ -165,6 +206,31 @@ class VisionAgent:
 
             observation = await self._observe()
             action = await self._reason(objective, observation, steps, trajectory_context=trajectory_context)
+
+            # Track consecutive Ollama failures (None/empty → wait fallback)
+            if action.action == "wait" and "empty response" in action.reasoning:
+                consecutive_ollama_failures += 1
+                if consecutive_ollama_failures >= 2:
+                    logger.warning(
+                        "VisionAgent: %d consecutive Ollama failures, aborting",
+                        consecutive_ollama_failures,
+                    )
+                    abort_action = AgentAction(
+                        action="abort",
+                        parameters={},
+                        reasoning="LLM unavailable — 2 consecutive failures",
+                    )
+                    abort_step = AgentStep(
+                        observation=observation,
+                        action=abort_action,
+                        result={"status": "failed", "reasoning": abort_action.reasoning},
+                    )
+                    steps.append(abort_step)
+                    if on_step:
+                        on_step(abort_step)
+                    break
+            else:
+                consecutive_ollama_failures = 0
 
             step = AgentStep(observation=observation, action=action)
 
@@ -270,7 +336,8 @@ class VisionAgent:
         if trajectory_context:
             trajectory_section = f"PAST EXPERIENCE (similar objectives attempted before):\n{trajectory_context}"
 
-        prompt = VISION_AGENT_PROMPT.format(
+        prompt_template = CUA_AGENT_PROMPT if self._use_coordinates else VISION_AGENT_PROMPT
+        prompt = prompt_template.format(
             objective=objective,
             window_title=observation.window_title,
             process_exe=observation.process_exe,

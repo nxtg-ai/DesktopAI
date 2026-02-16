@@ -192,12 +192,22 @@ pub fn run() {
         .expect("error while running DesktopAI");
 }
 
-async fn kill_all_actions_internal(_app: &tauri::AppHandle) -> Result<(), String> {
+async fn kill_all_actions_internal(app: &tauri::AppHandle) -> Result<(), String> {
     let client = reqwest::Client::new();
-    client
+    let resp = client
         .post("http://localhost:8000/api/autonomy/cancel-all")
         .send()
         .await
         .map_err(|e| format!("{e}"))?;
+    let text = resp.text().await.unwrap_or_default();
+    // Parse cancelled count and emit event for UI feedback
+    let cancelled: i64 = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v.get("cancelled")?.as_i64())
+        .unwrap_or(0);
+    let _ = app.emit(
+        "kill-confirmed",
+        serde_json::json!({ "cancelled": cancelled }),
+    );
     Ok(())
 }

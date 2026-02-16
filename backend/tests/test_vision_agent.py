@@ -334,3 +334,127 @@ def test_prompt_includes_focus_before_type_rule():
     assert "focus_window" in prompt_lower
     assert "type_text" in prompt_lower or "typing" in prompt_lower
     assert "focus" in prompt_lower and "before" in prompt_lower
+
+
+# ── Ollama failure abort tests ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_vision_agent_aborts_on_consecutive_ollama_failures(mock_bridge, mock_ollama):
+    """Agent aborts after 2 consecutive Ollama failures (None responses)."""
+    mock_bridge.execute.return_value = {
+        "ok": True,
+        "result": {"window_title": "Test", "process_exe": "test.exe"},
+    }
+    # Ollama returns None (failure) every time
+    mock_ollama.chat.return_value = None
+    # Remove chat_with_images so it falls to chat
+    if hasattr(mock_ollama, "chat_with_images"):
+        del mock_ollama.chat_with_images
+
+    agent = VisionAgent(
+        bridge=mock_bridge, ollama=mock_ollama, max_iterations=10,
+    )
+    steps = await agent.run("open notepad")
+
+    # Should abort, not run all 10 iterations
+    # 2 consecutive None → wait fallback; on the 2nd, abort fires
+    last = steps[-1]
+    assert last.action.action in ("abort", "done", "wait")
+    assert len(steps) <= 5  # Much less than max_iterations
+
+
+@pytest.mark.asyncio
+async def test_vision_agent_continues_after_single_ollama_failure(mock_bridge, mock_ollama):
+    """A single Ollama failure followed by success continues normally."""
+    mock_bridge.execute.return_value = {
+        "ok": True,
+        "result": {"window_title": "Test", "process_exe": "test.exe"},
+    }
+    # First call returns None (fail), second returns done
+    call_count = 0
+
+    async def varying_response(messages, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return None
+        return '{"action": "done", "parameters": {}, "reasoning": "done"}'
+
+    mock_ollama.chat.side_effect = varying_response
+    if hasattr(mock_ollama, "chat_with_images"):
+        del mock_ollama.chat_with_images
+
+    agent = VisionAgent(
+        bridge=mock_bridge, ollama=mock_ollama, max_iterations=10,
+    )
+    steps = await agent.run("open notepad")
+
+    assert steps[-1].action.action == "done"
+    assert len(steps) == 2  # wait (from None) + done
+
+
+@pytest.mark.asyncio
+async def test_vision_agent_abort_status_is_failed(mock_bridge, mock_ollama):
+    """When agent aborts due to Ollama failures, result has failed status."""
+    mock_bridge.execute.return_value = {
+        "ok": True,
+        "result": {"window_title": "Test", "process_exe": "test.exe"},
+    }
+    mock_ollama.chat.return_value = None
+    if hasattr(mock_ollama, "chat_with_images"):
+        del mock_ollama.chat_with_images
+
+    agent = VisionAgent(
+        bridge=mock_bridge, ollama=mock_ollama, max_iterations=10,
+    )
+    steps = await agent.run("open notepad")
+
+    # Agent should signal failure somehow — didn't exhaust iterations
+    assert len(steps) < 10
+    assert any(
+        s.action.action == "abort" or (s.result and s.result.get("status") == "failed")
+        for s in steps
+    )
+
+
+# ── CUA / Coordinate mode tests ─────────────────────────────────────
+
+
+def test_cua_prompt_uses_coordinates():
+    """CUA prompt references x/y pixel coordinates, not UIA names."""
+    from app.vision_agent import CUA_AGENT_PROMPT
+
+    assert '"x"' in CUA_AGENT_PROMPT
+    assert '"y"' in CUA_AGENT_PROMPT
+    assert "pixel coordinates" in CUA_AGENT_PROMPT.lower()
+
+
+def test_use_coordinates_selects_cua_prompt():
+    """VisionAgent with use_coordinates=True uses CUA prompt template."""
+    bridge = MagicMock()
+    ollama = MagicMock()
+
+    agent_name = VisionAgent(bridge=bridge, ollama=ollama, use_coordinates=False)
+    agent_cua = VisionAgent(bridge=bridge, ollama=ollama, use_coordinates=True)
+
+    assert agent_name._use_coordinates is False
+    assert agent_cua._use_coordinates is True
+
+
+def test_parse_action_with_xy_coordinates():
+    """Parser handles CUA-style x/y coordinate output."""
+    response = '{"action": "click", "parameters": {"x": 450, "y": 320}, "reasoning": "click button", "confidence": 0.85}'
+    action = VisionAgent._parse_action(response)
+    assert action.action == "click"
+    assert action.parameters["x"] == 450
+    assert action.parameters["y"] == 320
+    assert action.confidence == 0.85
+
+
+def test_parse_action_name_based_regression():
+    """Name-based action parsing still works alongside coordinate mode."""
+    response = '{"action": "click", "parameters": {"name": "Submit"}, "reasoning": "click submit", "confidence": 0.9}'
+    action = VisionAgent._parse_action(response)
+    assert action.action == "click"
+    assert action.parameters["name"] == "Submit"

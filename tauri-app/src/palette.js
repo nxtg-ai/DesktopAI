@@ -47,7 +47,7 @@ async function sendCommand(message) {
   palette.classList.add("loading");
 
   try {
-    const body = { message, allow_actions: true };
+    const body = { message, allow_actions: true, stream: true };
     if (conversationId) {
       body.conversation_id = conversationId;
     }
@@ -63,14 +63,58 @@ async function sendCommand(message) {
       return;
     }
 
+    // Always clear input after successful response
+    input.value = "";
+
+    // SSE streaming response
+    if (resp.headers.get("content-type")?.includes("text/event-stream")) {
+      showResponse("");
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalMeta = {};
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.error) {
+              responseText.textContent += " [Error]";
+              break;
+            }
+            if (event.token) responseText.textContent += event.token;
+            if (event.done) finalMeta = event;
+          } catch { /* skip bad JSON */ }
+        }
+      }
+
+      conversationId = finalMeta.conversation_id || conversationId;
+      const source = finalMeta.source || "ollama";
+
+      if (window.__TAURI__) {
+        window.__TAURI__.event.emit("palette-message", {
+          user: message,
+          agent: responseText.textContent,
+          source: source,
+          action_triggered: finalMeta.action_triggered,
+          conversation_id: conversationId,
+        });
+      }
+      return;
+    }
+
+    // Non-streaming JSON response (greeting, direct, fallback)
     const data = await resp.json();
     conversationId = data.conversation_id || conversationId;
 
     const reply = data.response || "Done.";
     const source = data.source || "";
-
-    // Always clear input after successful response
-    input.value = "";
 
     // Sync message to avatar overlay
     if (window.__TAURI__) {
@@ -142,4 +186,15 @@ async function resizeForResponse(expanded) {
   } catch {
     // Non-critical
   }
+}
+
+// Kill-confirmed visual feedback: flash palette border red
+if (window.__TAURI__) {
+  window.__TAURI__.event.listen("kill-confirmed", () => {
+    const pal = document.getElementById("palette");
+    if (pal) {
+      pal.classList.add("kill-flash");
+      pal.addEventListener("animationend", () => pal.classList.remove("kill-flash"), { once: true });
+    }
+  });
 }

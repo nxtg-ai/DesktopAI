@@ -1,4 +1,4 @@
-"""Async Ollama HTTP client with model fallback, health tracking, and vision support."""
+"""Async Ollama HTTP client with model fallback, health tracking, retry, and circuit breaker."""
 
 from __future__ import annotations
 
@@ -7,11 +7,19 @@ import base64
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Retry constants
+_MAX_RETRIES = 2
+_RETRY_BACKOFF_S = [1.0, 2.0]
+
+# Circuit breaker constants
+_CB_FAILURE_THRESHOLD = 3
+_CB_OPEN_DURATION_S = 30.0
 
 
 class OllamaClient:
@@ -27,6 +35,9 @@ class OllamaClient:
         self._last_http_status: Optional[int] = None
         self._last_error: Optional[str] = None
         self._lock = asyncio.Lock()
+        # Circuit breaker state
+        self._consecutive_failures: int = 0
+        self._circuit_open_until: float = 0.0
 
     def _record_health(
         self,
@@ -43,6 +54,38 @@ class OllamaClient:
         self._last_http_status = status_code
         self._last_error = error
 
+    def _record_failure(self) -> None:
+        """Increment failure counter and open circuit if threshold reached."""
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= _CB_FAILURE_THRESHOLD:
+            self._circuit_open_until = time.monotonic() + _CB_OPEN_DURATION_S
+            logger.warning(
+                "Circuit breaker open: %d consecutive failures, blocking for %.0fs",
+                self._consecutive_failures, _CB_OPEN_DURATION_S,
+            )
+
+    def _record_success(self) -> None:
+        """Reset failure counter and close circuit on success."""
+        self._consecutive_failures = 0
+        self._circuit_open_until = 0.0
+
+    def _is_circuit_open(self) -> bool:
+        """Check if circuit breaker is currently open."""
+        if self._consecutive_failures < _CB_FAILURE_THRESHOLD:
+            return False
+        if time.monotonic() < self._circuit_open_until:
+            return True
+        # Circuit cooldown expired — allow a probe request through
+        return False
+
+    @staticmethod
+    def _is_retryable(status_code: Optional[int], error: Optional[str]) -> bool:
+        """Determine if a failure should be retried. Only transport errors and 5xx."""
+        if status_code is None:
+            # Transport error (no HTTP response received)
+            return True
+        return status_code >= 500
+
     def diagnostics(self) -> dict:
         return {
             "available": bool(self._available),
@@ -53,6 +96,8 @@ class OllamaClient:
             "ttl_seconds": self._ttl,
             "configured_model": self.configured_model,
             "active_model": self.model,
+            "consecutive_failures": self._consecutive_failures,
+            "circuit_open": self._is_circuit_open(),
         }
 
     def set_active_model(self, model: str) -> str:
@@ -170,6 +215,36 @@ class OllamaClient:
             return None, status_code, "POST /api/generate returned empty response"
         return response_text, status_code, None
 
+    async def _generate_with_retry(
+        self,
+        prompt: str,
+        model: str,
+        timeout_s: float = 30.0,
+    ) -> tuple[Optional[str], Optional[int], Optional[str]]:
+        """Call _generate_once with retry on transport/5xx errors."""
+        response_text, status_code, error_detail = await self._generate_once(
+            prompt, model, timeout_s=timeout_s,
+        )
+        if error_detail is None:
+            return response_text, status_code, None
+
+        if not self._is_retryable(status_code, error_detail):
+            return response_text, status_code, error_detail
+
+        for i in range(_MAX_RETRIES):
+            backoff = _RETRY_BACKOFF_S[i] if i < len(_RETRY_BACKOFF_S) else _RETRY_BACKOFF_S[-1]
+            logger.info("Retrying generate (%d/%d) after %.1fs", i + 1, _MAX_RETRIES, backoff)
+            await asyncio.sleep(backoff)
+            response_text, status_code, error_detail = await self._generate_once(
+                prompt, model, timeout_s=timeout_s,
+            )
+            if error_detail is None:
+                return response_text, status_code, None
+            if not self._is_retryable(status_code, error_detail):
+                return response_text, status_code, error_detail
+
+        return response_text, status_code, error_detail
+
     async def _chat_once(
         self,
         messages: list[dict],
@@ -223,6 +298,37 @@ class OllamaClient:
             return None, status_code, "POST /api/chat returned empty response"
         return response_text, status_code, None
 
+    async def _chat_with_retry(
+        self,
+        messages: list[dict],
+        model: str,
+        timeout_s: float = 30.0,
+        format: Optional[dict] = None,
+    ) -> tuple[Optional[str], Optional[int], Optional[str]]:
+        """Call _chat_once with retry on transport/5xx errors."""
+        response_text, status_code, error_detail = await self._chat_once(
+            messages, model, timeout_s=timeout_s, format=format,
+        )
+        if error_detail is None:
+            return response_text, status_code, None
+
+        if not self._is_retryable(status_code, error_detail):
+            return response_text, status_code, error_detail
+
+        for i in range(_MAX_RETRIES):
+            backoff = _RETRY_BACKOFF_S[i] if i < len(_RETRY_BACKOFF_S) else _RETRY_BACKOFF_S[-1]
+            logger.info("Retrying chat (%d/%d) after %.1fs", i + 1, _MAX_RETRIES, backoff)
+            await asyncio.sleep(backoff)
+            response_text, status_code, error_detail = await self._chat_once(
+                messages, model, timeout_s=timeout_s, format=format,
+            )
+            if error_detail is None:
+                return response_text, status_code, None
+            if not self._is_retryable(status_code, error_detail):
+                return response_text, status_code, error_detail
+
+        return response_text, status_code, error_detail
+
     async def available(self) -> bool:
         now = time.monotonic()
         if now - self._last_check < self._ttl:
@@ -255,9 +361,20 @@ class OllamaClient:
         return await self.generate(prompt)
 
     async def generate(self, prompt: str) -> Optional[str]:
+        if self._is_circuit_open():
+            logger.warning("Circuit breaker open — skipping generate")
+            self._record_health(
+                source="generate", available=False,
+                error="circuit breaker open",
+            )
+            return None
+
         active_model = self.model
-        response_text, status_code, error_detail = await self._generate_once(prompt, active_model)
+        response_text, status_code, error_detail = await self._generate_with_retry(
+            prompt, active_model,
+        )
         if error_detail is None:
+            self._record_success()
             self._record_health(source="generate", available=True, status_code=status_code)
             return response_text
 
@@ -268,12 +385,14 @@ class OllamaClient:
                 fallback_text, fallback_status, fallback_error = await self._generate_once(prompt, fallback_model)
                 if fallback_error is None:
                     self.model = fallback_model
+                    self._record_success()
                     self._record_health(
                         source="generate_fallback",
                         available=True,
                         status_code=fallback_status,
                     )
                     return fallback_text
+                self._record_failure()
                 self._record_health(
                     source="generate_fallback",
                     available=False,
@@ -283,6 +402,7 @@ class OllamaClient:
                 return None
             error_detail = f"{error_detail}; no fallback model available"
 
+        self._record_failure()
         self._record_health(
             source="generate",
             available=False,
@@ -374,11 +494,20 @@ class OllamaClient:
         format: Optional[dict] = None,
         timeout_s: float = 60.0,
     ) -> Optional[str]:
+        if self._is_circuit_open():
+            logger.warning("Circuit breaker open — skipping chat")
+            self._record_health(
+                source="chat", available=False,
+                error="circuit breaker open",
+            )
+            return None
+
         active_model = model or self.model
-        response_text, status_code, error_detail = await self._chat_once(
-            messages, active_model, timeout_s=timeout_s, format=format
+        response_text, status_code, error_detail = await self._chat_with_retry(
+            messages, active_model, timeout_s=timeout_s, format=format,
         )
         if error_detail is None:
+            self._record_success()
             self._record_health(source="chat", available=True, status_code=status_code)
             return response_text
 
@@ -392,12 +521,14 @@ class OllamaClient:
                 if fallback_error is None:
                     if model is None:
                         self.model = fallback_model
+                    self._record_success()
                     self._record_health(
                         source="chat_fallback",
                         available=True,
                         status_code=fallback_status,
                     )
                     return fallback_text
+                self._record_failure()
                 self._record_health(
                     source="chat_fallback",
                     available=False,
@@ -407,6 +538,7 @@ class OllamaClient:
                 return None
             error_detail = f"{error_detail}; no fallback model available"
 
+        self._record_failure()
         self._record_health(
             source="chat",
             available=False,
@@ -414,6 +546,77 @@ class OllamaClient:
             error=error_detail,
         )
         return None
+
+    async def chat_stream(
+        self,
+        messages: list[dict],
+        *,
+        model: Optional[str] = None,
+        timeout_s: float = 60.0,
+    ) -> AsyncIterator[dict]:
+        """Async generator yielding streaming tokens from Ollama chat.
+
+        Yields dicts like {"token": "Hello", "done": false} per chunk.
+        Final chunk has "done": true.
+        """
+        if self._is_circuit_open():
+            logger.warning("Circuit breaker open — skipping chat_stream")
+            yield {"token": "", "done": True, "error": "circuit breaker open"}
+            return
+
+        active_model = model or self.model
+        payload = {
+            "model": active_model,
+            "messages": messages,
+            "stream": True,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_s) as client:
+                async with client.stream(
+                    "POST", f"{self.base_url}/api/chat", json=payload,
+                ) as resp:
+                    if resp.status_code != 200:
+                        self._record_failure()
+                        self._record_health(
+                            source="chat_stream", available=False,
+                            status_code=resp.status_code,
+                            error=f"stream returned status {resp.status_code}",
+                        )
+                        yield {"token": "", "done": True, "error": f"HTTP {resp.status_code}"}
+                        return
+
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            import json
+                            chunk = json.loads(line)
+                        except Exception:
+                            continue
+
+                        msg = chunk.get("message", {})
+                        token = msg.get("content", "")
+                        done = chunk.get("done", False)
+
+                        yield {"token": token, "done": done}
+
+                        if done:
+                            self._record_success()
+                            self._record_health(
+                                source="chat_stream", available=True,
+                                status_code=200,
+                            )
+                            return
+
+        except Exception as exc:
+            self._record_failure()
+            self._record_health(
+                source="chat_stream", available=False,
+                error=f"stream failed: {self._format_exception(exc)}",
+            )
+            yield {"token": "", "done": True, "error": str(exc)}
 
     async def chat_with_images(
         self,
@@ -426,6 +629,14 @@ class OllamaClient:
         if not messages or not images:
             return None
 
+        if self._is_circuit_open():
+            logger.warning("Circuit breaker open — skipping chat_with_images")
+            self._record_health(
+                source="chat_vision", available=False,
+                error="circuit breaker open",
+            )
+            return None
+
         messages_copy = [msg.copy() for msg in messages]
         encoded_images = [base64.b64encode(img).decode("utf-8") for img in images]
 
@@ -435,10 +646,11 @@ class OllamaClient:
                 break
 
         active_model = model or self.model
-        response_text, status_code, error_detail = await self._chat_once(
-            messages_copy, active_model, timeout_s=timeout_s
+        response_text, status_code, error_detail = await self._chat_with_retry(
+            messages_copy, active_model, timeout_s=timeout_s,
         )
         if error_detail is None:
+            self._record_success()
             self._record_health(source="chat_vision", available=True, status_code=status_code)
             return response_text
 
@@ -452,12 +664,14 @@ class OllamaClient:
                 if fallback_error is None:
                     if model is None:
                         self.model = fallback_model
+                    self._record_success()
                     self._record_health(
                         source="chat_vision_fallback",
                         available=True,
                         status_code=fallback_status,
                     )
                     return fallback_text
+                self._record_failure()
                 self._record_health(
                     source="chat_vision_fallback",
                     available=False,
@@ -467,6 +681,7 @@ class OllamaClient:
                 return None
             error_detail = f"{error_detail}; no fallback model available"
 
+        self._record_failure()
         self._record_health(
             source="chat_vision",
             available=False,

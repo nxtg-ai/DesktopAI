@@ -226,3 +226,4 @@ class ChatRequest(BaseModel):
     allow_actions: bool = True
     conversation_id: Optional[str] = None
     personality_mode: Optional[PersonalityMode] = None
+    stream: bool = False

@@ -804,31 +804,92 @@ async function sendMessage(text) {
         allow_actions: true,
         conversation_id: conversationId,
         personality_mode: personalityMode,
+        stream: true,
       }),
     });
 
     hideTyping();
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.conversation_id) {
-        conversationId = data.conversation_id;
-      }
-      avatar.bump(0.4);
-      const agentText = data.response || "No response";
-      appendMessage("agent", agentText, {
-        source: data.source,
-        action_triggered: data.action_triggered,
-      });
-      if (data.desktop_context) {
-        updateContext(data.desktop_context);
-      }
-      speakText(agentText);
-    } else {
+    if (!res.ok) {
       appendMessage("agent", "Something went wrong. Backend may be offline.", {
         source: "error",
       });
+      return;
     }
+
+    // SSE streaming response
+    if (res.headers.get("content-type")?.includes("text/event-stream")) {
+      const msg = document.createElement("div");
+      msg.className = "msg agent streaming";
+      const bubble = document.createElement("div");
+      bubble.className = "msg-bubble";
+      msg.appendChild(bubble);
+      if (chatWelcome) chatWelcome.style.display = "none";
+      chatMessages.appendChild(msg);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalMeta = {};
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.token) bubble.textContent += event.token;
+            if (event.done) finalMeta = event;
+          } catch { /* skip */ }
+        }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        avatar.bump(0.05);
+      }
+
+      msg.classList.remove("streaming");
+      // Render markdown in final bubble
+      bubble.innerHTML = renderMarkdown(bubble.textContent);
+      // Add meta row
+      const metaRow = document.createElement("div");
+      metaRow.className = "msg-meta";
+      const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const timeSpan = document.createElement("span");
+      timeSpan.textContent = time;
+      metaRow.appendChild(timeSpan);
+      if (finalMeta.source) {
+        const badge = document.createElement("span");
+        badge.className = "badge source";
+        badge.textContent = finalMeta.source;
+        metaRow.appendChild(badge);
+      }
+      msg.appendChild(metaRow);
+
+      if (finalMeta.conversation_id) conversationId = finalMeta.conversation_id;
+      if (finalMeta.desktop_context) updateContext(finalMeta.desktop_context);
+      avatar.bump(0.4);
+      speakText(bubble.textContent);
+      return;
+    }
+
+    // Non-streaming JSON response (greeting, direct, fallback)
+    const data = await res.json();
+    if (data.conversation_id) {
+      conversationId = data.conversation_id;
+    }
+    avatar.bump(0.4);
+    const agentText = data.response || "No response";
+    appendMessage("agent", agentText, {
+      source: data.source,
+      action_triggered: data.action_triggered,
+    });
+    if (data.desktop_context) {
+      updateContext(data.desktop_context);
+    }
+    speakText(agentText);
   } catch (err) {
     hideTyping();
     appendMessage("agent", "Cannot reach backend. Is it running?", {
@@ -949,5 +1010,28 @@ if (window.__TAURI__) {
     if (cid) conversationId = cid;
     appendMessage("user", user);
     appendMessage("agent", agent, { source, action_triggered });
+  });
+
+  // Kill-confirmed visual feedback: flash orb red + show message
+  window.__TAURI__.event.listen("kill-confirmed", (event) => {
+    const { cancelled } = event.payload || {};
+    const msg = cancelled > 0
+      ? `Killed ${cancelled} running action(s).`
+      : "No actions were running.";
+    appendMessage("agent", msg, { source: "system" });
+
+    // Flash orb red for 1.5s
+    avatar.setColor(STATUS_COLORS.warn);
+    setTimeout(() => avatar.setColor(STATUS_COLORS.live), 1500);
+
+    // Flash app border
+    const app = document.getElementById("app");
+    if (app) {
+      app.classList.add("kill-flash");
+      app.addEventListener("animationend", () => app.classList.remove("kill-flash"), { once: true });
+    }
+
+    activeRunIds.clear();
+    if (killBtn) killBtn.classList.add("hidden");
   });
 }
