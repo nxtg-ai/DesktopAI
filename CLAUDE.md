@@ -23,7 +23,7 @@ An intelligent desktop assistant that observes user activity and can autonomousl
 ```
 backend/app/          - FastAPI application code
 backend/app/routes/   - 13 route modules
-backend/tests/        - pytest test suite (562 unit tests)
+backend/tests/        - pytest test suite (612 unit + 12 integration tests)
 backend/web/          - Static web UI (HTML/CSS/JS)
 backend/web/modules/  - 10 ES modules
 collector/            - Rust collector source (74 tests)
@@ -50,7 +50,7 @@ ui-tests/             - Playwright end-to-end tests
 # Backend (manual)
 cd /home/axw/projects/DesktopAI
 source .venv/bin/activate
-pytest backend/tests/ -m "not integration" -q   # 540 unit tests
+pytest backend/tests/ -m "not integration" -q   # 612 unit tests
 uvicorn app.main:app --app-dir backend           # Dev server
 
 # Linting & Type Checking
@@ -84,7 +84,7 @@ make ui-test                                      # Headless Playwright
 - `GET /api/tts/voices` — List available TTS voices
 
 ## Testing Standards
-- 562 Python unit tests, 74 Rust tests — never decrease
+- 612 Python unit tests + 12 integration tests, 74 Rust tests — never decrease
 - New features require test coverage
 - Edge cases and error paths must be tested
 - CI runs ruff, pyright, and clippy before tests
@@ -172,7 +172,13 @@ Direct bridge patterns (no vision/LLM needed):
 ## What's Shipped (Sprint 8)
 - **Kokoro-82M TTS**: Server-side speech synthesis replacing browser Web Speech API. `POST /api/tts` returns WAV audio, frontend plays via AudioContext with graceful fallback. 54 voices, 24kHz 16-bit PCM. 22 new tests.
 
+## What's Shipped (Vision Phase 2)
+- **Phase 2A**: Rust ONNX inference skeleton (`collector/src/detection.rs`), Python detection merger, VisionAgent detection mode (`vision_mode=auto/vlm/detection`), `DETECTION_AGENT_PROMPT`, readiness checks.
+- **Phase 2B**: Model export script (`scripts/export-detection-model.py`), download script, 576 resolution fix, dynamic dims for Rust ONNX.
+- **Phase 2C**: ONNX model export (UI-DETR-1 → `models/ui-detr/ui-detr-1.onnx`, 124MB), 5 integration tests (ONNX format, inference, detection reasoning with real Ollama, latency, error handling), CI workflow + Makefile targets.
+- **Phase 2D**: End-to-end pipeline wiring — Rust detector logging (model load failure, detection count/timing), Python observe logging (detection receipt), Windows deployment script (`scripts/deploy-detection-model.sh`).
+
 ## What's Next (Sprint 8+ — see BACKLOG.md)
-- Vision Phase 2: UI-DETR-1 + text LLM split (10-15x speedup) — MIT license, purpose-built for UI detection
+- Vision Phase 2 UAT: Deploy model to Windows, run collector with `DETECTION_ENABLED=true`, verify detection boxes flow through chat
 - 3D Blender avatar with WebGL/WebGPU renderer
 - Natural language multi-step macros

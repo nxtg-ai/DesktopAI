@@ -118,13 +118,21 @@ fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
     // Run UI element detection on raw pixels (if model is available)
     let detections = if config.detection_enabled {
         let detector = DETECTOR.get_or_init(|| {
-            Detector::new(&config.detection_model_path, config.detection_confidence, config.detection_input_size)
+            let d = Detector::new(&config.detection_model_path, config.detection_confidence, config.detection_input_size);
+            if d.is_none() {
+                log::warn!("Detection model not loaded from '{}' — detection disabled", config.detection_model_path);
+            }
+            d
         });
         if let (Some(det), Some((w, h, ref pixels))) = (detector.as_ref(), &raw_pixels) {
+            let t0 = std::time::Instant::now();
             let dets = det.detect(pixels, *w, *h, 3); // 3-channel BGR
+            let elapsed_ms = t0.elapsed().as_millis();
             if !dets.is_empty() {
+                log::info!("Detection: {} elements in {}ms", dets.len(), elapsed_ms);
                 serde_json::to_value(&dets).ok()
             } else {
+                log::debug!("Detection: 0 elements in {}ms", elapsed_ms);
                 None
             }
         } else {

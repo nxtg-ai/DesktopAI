@@ -360,13 +360,16 @@ class VisionAgent:
         if uia_raw and isinstance(uia_raw, dict):
             uia_elements = uia_raw.get("window_tree", [])
         inner = result.get("result", {})
+        detections = result.get("detections")
+        if detections:
+            logger.info("Received %d detections from collector", len(detections))
         return AgentObservation(
             screenshot_b64=result.get("screenshot_b64"),
             uia_summary=json.dumps(uia_raw) if uia_raw else None,
             window_title=inner.get("window_title", ""),
             process_exe=inner.get("process_exe", ""),
             timestamp=datetime.now(timezone.utc),
-            detections=result.get("detections"),
+            detections=detections,
             uia_elements=uia_elements,
             screenshot_width=int(inner.get("screenshot_width", 1024)),
             screenshot_height=int(inner.get("screenshot_height", 768)),

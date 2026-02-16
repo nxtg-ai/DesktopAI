@@ -4,7 +4,7 @@ VENV_BIN := $(if $(wildcard .venv/bin/python),.venv/bin/,)
 PYTEST ?= $(VENV_BIN)pytest
 PYTHON ?= $(VENV_BIN)python
 
-.PHONY: backend-dev backend-test backend-test-integration backend-lint backend-typecheck ui-test ui-test-headed ui-test-live ui-artifacts ui-sessions ui-gate collector-build collector-lint skills-validate skills-score skills-score-all
+.PHONY: backend-dev backend-test backend-test-integration backend-test-vision-integration backend-lint backend-typecheck ui-test ui-test-headed ui-test-live ui-artifacts ui-sessions ui-gate collector-build collector-lint skills-validate skills-score skills-score-all
 
 backend-dev:
 	$(VENV_BIN)uvicorn app.main:app --app-dir backend --host $(BACKEND_HOST) --port $(BACKEND_PORT) --reload
@@ -14,6 +14,9 @@ backend-test:
 
 backend-test-integration:
 	$(PYTEST) -v backend/tests/test_llm_integration.py -m integration --timeout=120
+
+backend-test-vision-integration:
+	$(PYTEST) -v backend/tests/test_vision_detection_integration.py -m integration --timeout=120
 
 backend-lint:
 	$(VENV_BIN)ruff check backend/app/ backend/tests/

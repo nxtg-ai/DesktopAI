@@ -45,9 +45,16 @@ jobs:
           curl -s http://localhost:11434/api/generate -d '{"model":"qwen2.5:0.5b","prompt":"hi","stream":false}' --max-time 120 | head -c 200
           echo ""
 
-      - name: Run integration tests
+      - name: Run LLM integration tests
         env:
           OLLAMA_URL: http://localhost:11434
           OLLAMA_MODEL: qwen2.5:0.5b
         run: |
           pytest backend/tests/test_llm_integration.py -v -m integration --timeout=300
+
+      - name: Run vision detection integration tests
+        env:
+          OLLAMA_URL: http://localhost:11434
+          OLLAMA_MODEL: qwen2.5:0.5b
+        run: |
+          pytest backend/tests/test_vision_detection_integration.py -v -m integration --timeout=300

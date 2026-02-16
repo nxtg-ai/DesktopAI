@@ -48,15 +48,20 @@ def main() -> None:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Exporting to ONNX at {output_path}...")
-    model.export(str(output_path))
+    # rfdetr export() writes to output_dir/inference_model.onnx
+    export_dir = output_path.parent
+    print(f"Exporting to ONNX (dir={export_dir})...")
+    model.export(output_dir=str(export_dir))
 
-    if output_path.exists():
-        size_mb = output_path.stat().st_size / (1024 * 1024)
-        print(f"Export complete: {output_path} ({size_mb:.1f} MB)")
-    else:
+    intermediate = export_dir / "inference_model.onnx"
+    if intermediate.exists() and intermediate != output_path:
+        intermediate.rename(output_path)
+    elif not output_path.exists():
         print("Error: Export did not produce output file.", file=sys.stderr)
         sys.exit(1)
+
+    size_mb = output_path.stat().st_size / (1024 * 1024)
+    print(f"Export complete: {output_path} ({size_mb:.1f} MB)")
 
 
 if __name__ == "__main__":
