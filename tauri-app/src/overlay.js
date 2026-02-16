@@ -453,7 +453,7 @@ async function speakText(text) {
       src.start();
       return;
     }
-  } catch { /* fall through to browser fallback */ }
+  } catch (err) { console.warn("Kokoro TTS failed, falling back to browser:", err); }
   _speakBrowser(text);
 }
 
@@ -1047,6 +1047,7 @@ if (window.__TAURI__) {
     if (cid) conversationId = cid;
     appendMessage("user", user);
     appendMessage("agent", agent, { source, action_triggered });
+    speakText(agent);
   });
 
   // Kill-confirmed visual feedback: flash orb red + show message
