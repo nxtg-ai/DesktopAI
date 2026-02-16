@@ -38,6 +38,8 @@ pub struct CommandResult {
     pub uia: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detections: Option<serde_json::Value>,
 }
 
 impl CommandResult {
@@ -50,6 +52,7 @@ impl CommandResult {
             screenshot_b64: None,
             uia: None,
             error: None,
+            detections: None,
         }
     }
 
@@ -62,6 +65,7 @@ impl CommandResult {
             screenshot_b64: None,
             uia: None,
             error: Some(error.to_string()),
+            detections: None,
         }
     }
 }
@@ -87,17 +91,44 @@ pub fn execute_command(cmd: &Command, _config: &Config) -> CommandResult {
 
 #[cfg(windows)]
 fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
+    use std::sync::OnceLock;
+    use crate::detection::Detector;
+
+    static DETECTOR: OnceLock<Option<Detector>> = OnceLock::new();
+
     let mut result = HashMap::new();
     result.insert("action".to_string(), serde_json::Value::String("observe".to_string()));
 
-    // Capture screenshot if enabled
-    let screenshot_b64 = if config.enable_screenshot {
-        match crate::screenshot::capture_screenshot(config, windows::Win32::Foundation::HWND(0)) {
-            Some(b64) => Some(b64),
+    // Capture raw screenshot pixels and encode to base64 JPEG
+    let (raw_pixels, screenshot_b64) = if config.enable_screenshot {
+        match crate::screenshot::capture_raw_pixels(windows::Win32::Foundation::HWND(0)) {
+            Some((w, h, pixels)) => {
+                let b64 = crate::screenshot::encode_raw_to_base64(config, w, h, pixels.clone());
+                (Some((w, h, pixels)), b64)
+            }
             None => {
                 log::warn!("Screenshot capture failed during observe");
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    // Run UI element detection on raw pixels (if model is available)
+    let detections = if config.detection_enabled {
+        let detector = DETECTOR.get_or_init(|| {
+            Detector::new(&config.detection_model_path, config.detection_confidence)
+        });
+        if let (Some(det), Some((w, h, ref pixels))) = (detector.as_ref(), &raw_pixels) {
+            let dets = det.detect(pixels, *w, *h, 3); // 3-channel BGR
+            if !dets.is_empty() {
+                serde_json::to_value(&dets).ok()
+            } else {
                 None
             }
+        } else {
+            None
         }
     } else {
         None
@@ -131,6 +162,7 @@ fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
     let mut cmd_result = CommandResult::success(&cmd.command_id, result);
     cmd_result.screenshot_b64 = screenshot_b64;
     cmd_result.uia = uia;
+    cmd_result.detections = detections;
     cmd_result
 }
 

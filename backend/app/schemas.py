@@ -221,6 +221,14 @@ class AutonomyRunRecord(BaseModel):
     agent_log: List[AgentLogEntry] = Field(default_factory=list)
 
 
+class DetectedElement(BaseModel):
+    x: float
+    y: float
+    width: float
+    height: float
+    confidence: float
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     allow_actions: bool = True

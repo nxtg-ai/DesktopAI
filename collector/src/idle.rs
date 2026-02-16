@@ -62,6 +62,9 @@ mod tests {
             screenshot_format: "jpeg".into(),
             uia_cache_ttl_ms: 2000,
             ws_reconnect_max_ms: 30_000,
+            detection_enabled: false,
+            detection_model_path: String::new(),
+            detection_confidence: 0.3,
         };
 
         // Should return immediately when idle_enabled is false

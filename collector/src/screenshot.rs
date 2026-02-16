@@ -50,6 +50,32 @@ pub fn capture_screenshot(config: &Config, hwnd: HWND) -> Option<String> {
     Some(base64_encode(&jpeg_data))
 }
 
+/// Capture raw 24-bit BGR pixels from the monitor containing the given window.
+/// Returns (width, height, pixel_data). Public so `handle_observe` can feed
+/// pixels to the detection module before JPEG encoding.
+pub fn capture_raw_pixels(hwnd: HWND) -> Option<(u32, u32, Vec<u8>)> {
+    capture_monitor_pixels(hwnd)
+}
+
+/// Encode raw BGR pixels to base64 JPEG, applying downscale and ring buffer.
+pub fn encode_raw_to_base64(
+    config: &Config,
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+) -> Option<String> {
+    let (w, h, px) = downscale_if_needed(
+        width,
+        height,
+        pixels,
+        config.screenshot_max_width,
+        config.screenshot_max_height,
+    );
+    let jpeg_data = encode_jpeg(&px, w, h, config.screenshot_quality)?;
+    store_in_buffer(jpeg_data.clone());
+    Some(base64_encode(&jpeg_data))
+}
+
 /// Capture raw pixels from the monitor that contains the given window.
 /// Falls back to the foreground window when `hwnd` is null, and ultimately
 /// to the primary monitor if no foreground window is found.

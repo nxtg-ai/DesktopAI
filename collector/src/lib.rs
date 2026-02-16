@@ -18,9 +18,10 @@ pub mod windows;
 pub mod screenshot;
 
 pub mod command;
+pub mod detection;
 
 // Re-export public types for testability and external use
-pub use config::{Config, env_bool, env_u64, env_usize, env_u32, env_u8};
+pub use config::{Config, env_bool, env_u64, env_usize, env_u32, env_u8, env_f32};
 pub use event::{WindowEvent, UiaSnapshot, UiaElement, build_activity_event};
 pub use network::{connect_ws, send_http, network_worker};
 pub use idle::idle_worker;

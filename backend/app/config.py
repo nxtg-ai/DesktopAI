@@ -114,6 +114,12 @@ class Settings:
     tts_default_voice: str = _env("TTS_DEFAULT_VOICE", "af_bella")
     tts_default_speed: float = float(_env("TTS_DEFAULT_SPEED", "1.0"))
 
+    vision_mode: str = _env("VISION_MODE", "auto")
+    detection_confidence_threshold: float = float(
+        _env("DETECTION_CONFIDENCE_THRESHOLD", "0.3")
+    )
+    detection_merge_iou: float = float(_env("DETECTION_MERGE_IOU", "0.3"))
+
     allowed_origins: List[str] = field(
         default_factory=lambda: [
             origin.strip()

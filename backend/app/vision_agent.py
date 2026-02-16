@@ -48,6 +48,47 @@ RULES:
 
 Your action:"""
 
+DETECTION_AGENT_PROMPT = """\
+You are DesktopAI, an autonomous desktop agent. You can see a numbered list of UI elements detected on the user's screen.
+
+OBJECTIVE: {objective}
+
+DETECTED UI ELEMENTS:
+{element_list}
+
+Window: {window_title}
+Process: {process_exe}
+
+AVAILABLE ACTIONS (respond with exactly one JSON object):
+- {{"action": "click", "parameters": {{"element_id": 3}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "click", "parameters": {{"x": 450, "y": 320}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "type_text", "parameters": {{"text": "content to type"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "send_keys", "parameters": {{"keys": "ctrl+c"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "open_application", "parameters": {{"application": "notepad.exe"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "focus_window", "parameters": {{"title": "Window Title"}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "scroll", "parameters": {{"direction": "down", "amount": 3}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "double_click", "parameters": {{"element_id": 5}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "right_click", "parameters": {{"element_id": 5}}, "reasoning": "why", "confidence": 0.9}}
+- {{"action": "wait", "parameters": {{}}, "reasoning": "waiting for UI to update", "confidence": 1.0}}
+- {{"action": "done", "parameters": {{}}, "reasoning": "objective completed because...", "confidence": 0.95}}
+
+{history_section}
+
+{trajectory_section}
+RULES:
+1. Prefer clicking by element_id when the target is in the element list.
+2. Use x/y coordinates (center of bbox) when element_id is ambiguous.
+3. Respond with ONLY a JSON object. No markdown, no explanation.
+4. Each action should move you closer to the objective.
+5. IMPORTANT: After each action, check if the objective has ALREADY been achieved. If yes, respond with action "done".
+6. Use "wait" if you need the UI to settle after a previous action.
+7. If stuck after 3 attempts, try a different approach.
+8. Include a "confidence" field (0.0 to 1.0).
+9. Do NOT repeat the same action more than twice.
+10. Before typing text, ALWAYS use "focus_window" first.
+
+Your action:"""
+
 CUA_AGENT_PROMPT = """\
 You are DesktopAI, a computer-use agent. You can see the user's screen and control their Windows desktop using pixel coordinates.
 
@@ -94,6 +135,8 @@ class AgentObservation:
     window_title: str
     process_exe: str
     timestamp: datetime
+    detections: Optional[List[Dict[str, Any]]] = None
+    uia_elements: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +169,8 @@ class VisionAgent:
         trajectory_max_chars: int = 1500,
         trajectory_max_results: int = 3,
         use_coordinates: bool = False,
+        vision_mode: str = "auto",
+        detection_merge_iou: float = 0.3,
     ) -> None:
         self._bridge = bridge
         self._ollama = ollama
@@ -138,6 +183,9 @@ class VisionAgent:
         self._trajectory_max_chars = trajectory_max_chars
         self._trajectory_max_results = trajectory_max_results
         self._use_coordinates = use_coordinates
+        self._vision_mode = vision_mode
+        self._detection_merge_iou = detection_merge_iou
+        self._merged_elements: Optional[List] = None
 
     async def run(
         self,
@@ -304,13 +352,28 @@ class VisionAgent:
 
     async def _observe(self) -> AgentObservation:
         result = await self._bridge.execute("observe", timeout_s=10)
+        uia_raw = result.get("uia")
+        uia_elements = None
+        if uia_raw and isinstance(uia_raw, dict):
+            uia_elements = uia_raw.get("window_tree", [])
         return AgentObservation(
             screenshot_b64=result.get("screenshot_b64"),
-            uia_summary=json.dumps(result.get("uia")) if result.get("uia") else None,
+            uia_summary=json.dumps(uia_raw) if uia_raw else None,
             window_title=result.get("result", {}).get("window_title", ""),
             process_exe=result.get("result", {}).get("process_exe", ""),
             timestamp=datetime.now(timezone.utc),
+            detections=result.get("detections"),
+            uia_elements=uia_elements,
         )
+
+    def _should_use_detection(self, observation: AgentObservation) -> bool:
+        """Decide whether to use the detection (text-only LLM) path."""
+        if self._vision_mode == "vlm":
+            return False
+        if self._vision_mode == "detection":
+            return True
+        # "auto": use detection if we have detections
+        return bool(observation.detections)
 
     async def _reason(
         self,
@@ -319,19 +382,102 @@ class VisionAgent:
         history: List[AgentStep],
         trajectory_context: str = "",
     ) -> AgentAction:
+        if self._should_use_detection(observation):
+            return await self._reason_detection(
+                objective, observation, history, trajectory_context,
+            )
+        return await self._reason_vlm(
+            objective, observation, history, trajectory_context,
+        )
+
+    async def _reason_detection(
+        self,
+        objective: str,
+        observation: AgentObservation,
+        history: List[AgentStep],
+        trajectory_context: str = "",
+    ) -> AgentAction:
+        """Text-only reasoning using detected element list (no screenshot sent)."""
+        from .detection_merger import format_element_list, merge_detections_with_uia
+
+        detections = observation.detections or []
+        uia_elements = observation.uia_elements or []
+
+        merged = merge_detections_with_uia(
+            detections,
+            uia_elements,
+            image_width=1024,
+            image_height=768,
+            iou_threshold=self._detection_merge_iou,
+        )
+        self._merged_elements = merged
+        element_list = format_element_list(merged) if merged else "(no elements detected)"
+
+        history_section = self._build_history_section(history)
+        trajectory_section = ""
+        if trajectory_context:
+            trajectory_section = f"PAST EXPERIENCE (similar objectives attempted before):\n{trajectory_context}"
+
+        prompt = DETECTION_AGENT_PROMPT.format(
+            objective=objective,
+            element_list=element_list,
+            window_title=observation.window_title,
+            process_exe=observation.process_exe,
+            history_section=history_section,
+            trajectory_section=trajectory_section,
+        )
+
+        messages = [{"role": "user", "content": prompt}]
+
+        try:
+            response = await self._ollama.chat(messages)
+        except Exception as exc:
+            logger.warning("VisionAgent detection reasoning failed: %s", exc)
+            return AgentAction(action="wait", parameters={}, reasoning=f"reasoning error: {exc}")
+
+        action = self._parse_action(response)
+
+        # Resolve element_id → x/y coordinates for click actions
+        if action.action in ("click", "double_click", "right_click"):
+            params = dict(action.parameters)
+            element_id = params.get("element_id")
+            if element_id is not None and merged:
+                idx = int(element_id)
+                if 0 <= idx < len(merged):
+                    el = merged[idx]
+                    cx = el.bbox[0] + el.bbox[2] // 2
+                    cy = el.bbox[1] + el.bbox[3] // 2
+                    # If merged element has UIA name, prefer name-based click
+                    if el.uia_name:
+                        params["name"] = el.uia_name
+                    elif el.uia_automation_id:
+                        params["automation_id"] = el.uia_automation_id
+                    else:
+                        params["x"] = cx
+                        params["y"] = cy
+                    params.pop("element_id", None)
+                    return AgentAction(
+                        action=action.action,
+                        parameters=params,
+                        reasoning=action.reasoning,
+                        confidence=action.confidence,
+                    )
+
+        return action
+
+    async def _reason_vlm(
+        self,
+        objective: str,
+        observation: AgentObservation,
+        history: List[AgentStep],
+        trajectory_context: str = "",
+    ) -> AgentAction:
+        """VLM reasoning with screenshot (original path)."""
         uia_section = ""
         if observation.uia_summary:
             uia_section = f"UI Elements:\n{observation.uia_summary[:2000]}"
 
-        history_lines = []
-        for i, step in enumerate(history[-5:]):  # Last 5 steps for context
-            history_lines.append(
-                f"Step {i+1}: action={step.action.action}, "
-                f"reasoning={step.action.reasoning}, "
-                f"result={'ok' if step.error is None else f'error: {step.error}'}"
-            )
-        history_section = "HISTORY:\n" + "\n".join(history_lines) if history_lines else ""
-
+        history_section = self._build_history_section(history)
         trajectory_section = ""
         if trajectory_context:
             trajectory_section = f"PAST EXPERIENCE (similar objectives attempted before):\n{trajectory_context}"
@@ -362,6 +508,17 @@ class VisionAgent:
             return AgentAction(action="wait", parameters={}, reasoning=f"reasoning error: {exc}")
 
         return self._parse_action(response)
+
+    @staticmethod
+    def _build_history_section(history: List[AgentStep]) -> str:
+        history_lines = []
+        for i, step in enumerate(history[-5:]):
+            history_lines.append(
+                f"Step {i+1}: action={step.action.action}, "
+                f"reasoning={step.action.reasoning}, "
+                f"result={'ok' if step.error is None else f'error: {step.error}'}"
+            )
+        return "HISTORY:\n" + "\n".join(history_lines) if history_lines else ""
 
     async def _act(self, action: AgentAction) -> Dict[str, Any]:
         return await self._bridge.execute(

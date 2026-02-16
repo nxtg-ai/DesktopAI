@@ -219,6 +219,8 @@ def _build_vision_agent(max_iterations: int = 0):
         trajectory_max_chars=settings.trajectory_context_max_chars,
         trajectory_max_results=settings.trajectory_context_max_results,
         use_coordinates=use_coordinates,
+        vision_mode=settings.vision_mode,
+        detection_merge_iou=settings.detection_merge_iou,
     )
 
 

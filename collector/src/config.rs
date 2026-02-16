@@ -24,6 +24,9 @@ pub struct Config {
     pub screenshot_format: String,
     pub uia_cache_ttl_ms: u64,
     pub ws_reconnect_max_ms: u64,
+    pub detection_enabled: bool,
+    pub detection_model_path: String,
+    pub detection_confidence: f32,
 }
 
 impl Config {
@@ -51,6 +54,10 @@ impl Config {
         let screenshot_format = env::var("SCREENSHOT_FORMAT").unwrap_or_else(|_| "jpeg".into());
         let uia_cache_ttl_ms = env_u64("UIA_CACHE_TTL_MS", 2000);
         let ws_reconnect_max_ms = env_u64("WS_RECONNECT_MAX_MS", 30_000);
+        let detection_enabled = env_bool("DETECTION_ENABLED", true);
+        let detection_model_path = env::var("DETECTION_MODEL_PATH")
+            .unwrap_or_else(|_| "models/ui-detr/ui-detr-1.onnx".into());
+        let detection_confidence = env_f32("DETECTION_CONFIDENCE", 0.3);
         Self {
             ws_url,
             http_url,
@@ -70,6 +77,9 @@ impl Config {
             screenshot_format,
             uia_cache_ttl_ms,
             ws_reconnect_max_ms,
+            detection_enabled,
+            detection_model_path,
+            detection_confidence,
         }
     }
 }
@@ -102,6 +112,13 @@ pub fn env_u32(name: &str, default: u32) -> u32 {
     env::var(name)
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(default)
+}
+
+pub fn env_f32(name: &str, default: f32) -> f32 {
+    env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
         .unwrap_or(default)
 }
 
@@ -395,6 +412,9 @@ mod tests {
         env::remove_var("SCREENSHOT_FORMAT");
         env::remove_var("UIA_CACHE_TTL_MS");
         env::remove_var("WS_RECONNECT_MAX_MS");
+        env::remove_var("DETECTION_ENABLED");
+        env::remove_var("DETECTION_MODEL_PATH");
+        env::remove_var("DETECTION_CONFIDENCE");
 
         let config = Config::from_env();
 
@@ -416,6 +436,9 @@ mod tests {
         assert_eq!(config.screenshot_format, "jpeg");
         assert_eq!(config.uia_cache_ttl_ms, 2000);
         assert_eq!(config.ws_reconnect_max_ms, 30_000);
+        assert!(config.detection_enabled);
+        assert_eq!(config.detection_model_path, "models/ui-detr/ui-detr-1.onnx");
+        assert!((config.detection_confidence - 0.3).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -439,6 +462,9 @@ mod tests {
         env::set_var("SCREENSHOT_FORMAT", "webp");
         env::set_var("UIA_CACHE_TTL_MS", "5000");
         env::set_var("WS_RECONNECT_MAX_MS", "60000");
+        env::set_var("DETECTION_ENABLED", "false");
+        env::set_var("DETECTION_MODEL_PATH", "/opt/models/custom.onnx");
+        env::set_var("DETECTION_CONFIDENCE", "0.5");
 
         let config = Config::from_env();
 
@@ -460,6 +486,9 @@ mod tests {
         assert_eq!(config.screenshot_format, "webp");
         assert_eq!(config.uia_cache_ttl_ms, 5000);
         assert_eq!(config.ws_reconnect_max_ms, 60000);
+        assert!(!config.detection_enabled);
+        assert_eq!(config.detection_model_path, "/opt/models/custom.onnx");
+        assert!((config.detection_confidence - 0.5).abs() < f32::EPSILON);
 
         // Cleanup
         env::remove_var("BACKEND_WS_URL");
@@ -480,6 +509,9 @@ mod tests {
         env::remove_var("SCREENSHOT_FORMAT");
         env::remove_var("UIA_CACHE_TTL_MS");
         env::remove_var("WS_RECONNECT_MAX_MS");
+        env::remove_var("DETECTION_ENABLED");
+        env::remove_var("DETECTION_MODEL_PATH");
+        env::remove_var("DETECTION_CONFIDENCE");
     }
 
     #[test]
