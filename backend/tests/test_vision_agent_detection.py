@@ -11,6 +11,7 @@ from app.vision_agent import AgentAction, AgentObservation, AgentStep, VisionAge
 def _make_observation(
     detections=None, uia_elements=None, screenshot_b64="abc",
     window_title="Test Window", process_exe="test.exe",
+    screenshot_width=1024, screenshot_height=768,
 ):
     return AgentObservation(
         screenshot_b64=screenshot_b64,
@@ -20,6 +21,8 @@ def _make_observation(
         timestamp=datetime.now(timezone.utc),
         detections=detections,
         uia_elements=uia_elements,
+        screenshot_width=screenshot_width,
+        screenshot_height=screenshot_height,
     )
 
 
@@ -318,6 +321,62 @@ class TestObserveDetections:
         assert obs.uia_elements is not None
         assert len(obs.uia_elements) == 1
         assert obs.uia_elements[0]["name"] == "OK"
+
+    @pytest.mark.asyncio
+    async def test_observe_extracts_screenshot_dimensions(self):
+        """Observe extracts screenshot_width/height from bridge result."""
+        agent, bridge_mock, _ = _make_agent()
+        bridge_mock.execute = AsyncMock(return_value={
+            "screenshot_b64": "abc",
+            "result": {
+                "window_title": "Test", "process_exe": "test.exe",
+                "screenshot_width": 1920, "screenshot_height": 1080,
+            },
+        })
+
+        obs = await agent._observe()
+        assert obs.screenshot_width == 1920
+        assert obs.screenshot_height == 1080
+
+    @pytest.mark.asyncio
+    async def test_observe_defaults_screenshot_dimensions(self):
+        """Observe defaults screenshot_width/height when not provided."""
+        agent, bridge_mock, _ = _make_agent()
+        bridge_mock.execute = AsyncMock(return_value={
+            "screenshot_b64": "abc",
+            "result": {"window_title": "Test", "process_exe": "test.exe"},
+        })
+
+        obs = await agent._observe()
+        assert obs.screenshot_width == 1024
+        assert obs.screenshot_height == 768
+
+
+class TestReasonDetectionDynamicDimensions:
+    @pytest.mark.asyncio
+    async def test_dynamic_dimensions_passed_to_merger(self):
+        """_reason_detection uses observation screenshot_width/height, not hardcoded."""
+        agent, _, ollama = _make_agent(vision_mode="detection")
+        ollama.chat = AsyncMock(return_value=json.dumps({
+            "action": "done", "parameters": {}, "reasoning": "ok", "confidence": 0.9,
+        }))
+
+        obs = _make_observation(
+            detections=[{"x": 0.1, "y": 0.1, "width": 0.05, "height": 0.03, "confidence": 0.8}],
+            screenshot_width=1920,
+            screenshot_height=1080,
+        )
+
+        with patch("app.detection_merger.merge_detections_with_uia") as mock_merge:
+            from app.detection_merger import MergedElement
+            mock_merge.return_value = [
+                MergedElement(bbox=(192, 108, 96, 32), confidence=0.8, source="detection"),
+            ]
+            await agent._reason_detection("test", obs, [])
+            mock_merge.assert_called_once()
+            _, kwargs = mock_merge.call_args
+            assert kwargs["image_width"] == 1920
+            assert kwargs["image_height"] == 1080
 
 
 class TestBuildHistorySection:

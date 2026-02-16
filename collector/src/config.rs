@@ -27,6 +27,7 @@ pub struct Config {
     pub detection_enabled: bool,
     pub detection_model_path: String,
     pub detection_confidence: f32,
+    pub detection_input_size: u32,
 }
 
 impl Config {
@@ -58,6 +59,7 @@ impl Config {
         let detection_model_path = env::var("DETECTION_MODEL_PATH")
             .unwrap_or_else(|_| "models/ui-detr/ui-detr-1.onnx".into());
         let detection_confidence = env_f32("DETECTION_CONFIDENCE", 0.3);
+        let detection_input_size = env_u32("DETECTION_INPUT_SIZE", 576);
         Self {
             ws_url,
             http_url,
@@ -80,6 +82,7 @@ impl Config {
             detection_enabled,
             detection_model_path,
             detection_confidence,
+            detection_input_size,
         }
     }
 }
@@ -415,6 +418,7 @@ mod tests {
         env::remove_var("DETECTION_ENABLED");
         env::remove_var("DETECTION_MODEL_PATH");
         env::remove_var("DETECTION_CONFIDENCE");
+        env::remove_var("DETECTION_INPUT_SIZE");
 
         let config = Config::from_env();
 
@@ -439,6 +443,7 @@ mod tests {
         assert!(config.detection_enabled);
         assert_eq!(config.detection_model_path, "models/ui-detr/ui-detr-1.onnx");
         assert!((config.detection_confidence - 0.3).abs() < f32::EPSILON);
+        assert_eq!(config.detection_input_size, 576);
     }
 
     #[test]
@@ -465,6 +470,7 @@ mod tests {
         env::set_var("DETECTION_ENABLED", "false");
         env::set_var("DETECTION_MODEL_PATH", "/opt/models/custom.onnx");
         env::set_var("DETECTION_CONFIDENCE", "0.5");
+        env::set_var("DETECTION_INPUT_SIZE", "640");
 
         let config = Config::from_env();
 
@@ -489,6 +495,7 @@ mod tests {
         assert!(!config.detection_enabled);
         assert_eq!(config.detection_model_path, "/opt/models/custom.onnx");
         assert!((config.detection_confidence - 0.5).abs() < f32::EPSILON);
+        assert_eq!(config.detection_input_size, 640);
 
         // Cleanup
         env::remove_var("BACKEND_WS_URL");
@@ -512,6 +519,7 @@ mod tests {
         env::remove_var("DETECTION_ENABLED");
         env::remove_var("DETECTION_MODEL_PATH");
         env::remove_var("DETECTION_CONFIDENCE");
+        env::remove_var("DETECTION_INPUT_SIZE");
     }
 
     #[test]

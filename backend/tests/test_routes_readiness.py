@@ -57,6 +57,29 @@ async def test_executor_preflight():
 
 
 @pytest.mark.asyncio
+async def test_readiness_includes_detection_check():
+    """Readiness checks include detection_model_available entry."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/api/readiness/status")
+    checks = resp.json()["checks"]
+    names = [c["name"] for c in checks]
+    assert "detection_model_available" in names
+    det_check = next(c for c in checks if c["name"] == "detection_model_available")
+    assert det_check["required"] is False
+
+
+@pytest.mark.asyncio
+async def test_readiness_summary_has_vision_mode():
+    """Readiness summary includes vision_mode and detection fields."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/api/readiness/status")
+    summary = resp.json()["summary"]
+    assert "vision_mode" in summary
+    assert "detection_model_available" in summary
+    assert "detection_model_path" in summary
+
+
+@pytest.mark.asyncio
 async def test_selftest():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.get("/api/selftest")

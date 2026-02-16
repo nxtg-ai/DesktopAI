@@ -8,6 +8,7 @@
 use ndarray::Array4;
 use serde::Serialize;
 use std::path::Path;
+use std::time::Instant;
 
 use ort::session::Session;
 
@@ -30,11 +31,12 @@ pub struct Detection {
 pub struct Detector {
     session: Session,
     confidence_threshold: f32,
+    input_size: u32,
 }
 
 impl Detector {
     /// Load the ONNX model from disk. Returns `None` if the file doesn't exist.
-    pub fn new(model_path: &str, confidence_threshold: f32) -> Option<Self> {
+    pub fn new(model_path: &str, confidence_threshold: f32, input_size: u32) -> Option<Self> {
         if !Path::new(model_path).exists() {
             log::info!("Detection model not found at {model_path}, detection disabled");
             return None;
@@ -45,10 +47,11 @@ impl Detector {
             .and_then(|b| b.commit_from_file(model_path))
         {
             Ok(session) => {
-                log::info!("Loaded detection model from {model_path}");
+                log::info!("Loaded detection model from {model_path} (input_size={input_size})");
                 Some(Self {
                     session,
                     confidence_threshold,
+                    input_size,
                 })
             }
             Err(e) => {
@@ -63,7 +66,9 @@ impl Detector {
     /// `channels` is the bytes-per-pixel (3 for 24-bit BGR, 4 for 32-bit BGRA).
     /// Returns a list of detected UI elements with normalized coordinates.
     pub fn detect(&self, pixels: &[u8], width: u32, height: u32, channels: usize) -> Vec<Detection> {
-        let input = preprocess(pixels, width, height, channels);
+        let start = Instant::now();
+
+        let input = preprocess(pixels, width, height, channels, self.input_size);
 
         let outputs = match self.session.run(ort::inputs![input.view()].unwrap()) {
             Ok(o) => o,
@@ -74,7 +79,7 @@ impl Detector {
         };
 
         // RF-DETR / DETR-style output: boxes [1, N, 4] + scores [1, N]
-        // Boxes are in CXCYWH format normalized to input size (640x640).
+        // Boxes are in CXCYWH format normalized to input size.
         let (boxes_raw, scores_raw) = match extract_outputs(&outputs) {
             Some(pair) => pair,
             None => {
@@ -83,7 +88,10 @@ impl Detector {
             }
         };
 
-        postprocess(&boxes_raw, &scores_raw, self.confidence_threshold)
+        let detections = postprocess(&boxes_raw, &scores_raw, self.confidence_threshold, self.input_size);
+        let elapsed_ms = start.elapsed().as_millis();
+        log::info!("Detection: {} elements in {}ms (input_size={})", detections.len(), elapsed_ms, self.input_size);
+        detections
     }
 }
 
@@ -153,12 +161,13 @@ fn extract_outputs(
     Some((boxes, scores))
 }
 
-/// Preprocess BGR screenshot pixels to a 640x640 RGB float tensor [1, 3, 640, 640].
+/// Preprocess BGR screenshot pixels to an NxN RGB float tensor [1, 3, N, N].
 ///
 /// `channels` is the number of bytes per pixel (3 for BGR, 4 for BGRA).
+/// `target_size` is the model's expected input resolution (e.g. 576 for RF-DETR-M).
 /// Windows `GetDIBits` with `biBitCount=24` produces 3-channel BGR.
-pub fn preprocess(pixels: &[u8], width: u32, height: u32, channels: usize) -> Array4<f32> {
-    let target = 640usize;
+pub fn preprocess(pixels: &[u8], width: u32, height: u32, channels: usize, target_size: u32) -> Array4<f32> {
+    let target = target_size as usize;
     let mut tensor = Array4::<f32>::zeros((1, 3, target, target));
 
     let w = width as usize;
@@ -193,8 +202,9 @@ pub fn postprocess(
     boxes: &[[f32; 4]],
     scores: &[f32],
     confidence_threshold: f32,
+    input_size: u32,
 ) -> Vec<Detection> {
-    let input_size = 640.0_f32;
+    let input_size = input_size as f32;
 
     // Filter by confidence and convert CXCYWH → normalized XYWH
     let mut candidates: Vec<Detection> = boxes
@@ -281,15 +291,15 @@ mod tests {
     fn test_preprocess_dimensions() {
         // 4x3 BGR image (3 channels, matching Windows GetDIBits output)
         let pixels = vec![128u8; 4 * 3 * 3]; // 4w * 3h * 3 channels
-        let tensor = preprocess(&pixels, 4, 3, 3);
-        assert_eq!(tensor.shape(), &[1, 3, 640, 640]);
+        let tensor = preprocess(&pixels, 4, 3, 3, 576);
+        assert_eq!(tensor.shape(), &[1, 3, 576, 576]);
     }
 
     #[test]
     fn test_preprocess_pixel_values() {
         // Single white pixel (BGR: 255,255,255)
         let pixels = vec![255u8; 3];
-        let tensor = preprocess(&pixels, 1, 1, 3);
+        let tensor = preprocess(&pixels, 1, 1, 3, 576);
         // All tensor values should be ~1.0 (white)
         assert!((tensor[[0, 0, 0, 0]] - 1.0).abs() < 0.01);
         assert!((tensor[[0, 1, 0, 0]] - 1.0).abs() < 0.01);
@@ -300,7 +310,7 @@ mod tests {
     fn test_preprocess_bgr_to_rgb_order() {
         // B=100, G=150, R=200 (3-channel BGR)
         let pixels = vec![100, 150, 200];
-        let tensor = preprocess(&pixels, 1, 1, 3);
+        let tensor = preprocess(&pixels, 1, 1, 3, 576);
         // Channel 0 = R, Channel 1 = G, Channel 2 = B
         assert!((tensor[[0, 0, 0, 0]] - 200.0 / 255.0).abs() < 0.01);
         assert!((tensor[[0, 1, 0, 0]] - 150.0 / 255.0).abs() < 0.01);
@@ -311,10 +321,18 @@ mod tests {
     fn test_preprocess_bgra_4channel() {
         // B=100, G=150, R=200, A=255 (4-channel BGRA)
         let pixels = vec![100, 150, 200, 255];
-        let tensor = preprocess(&pixels, 1, 1, 4);
+        let tensor = preprocess(&pixels, 1, 1, 4, 576);
         assert!((tensor[[0, 0, 0, 0]] - 200.0 / 255.0).abs() < 0.01);
         assert!((tensor[[0, 1, 0, 0]] - 150.0 / 255.0).abs() < 0.01);
         assert!((tensor[[0, 2, 0, 0]] - 100.0 / 255.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_preprocess_custom_size() {
+        // Verify that a non-default size (640) produces the correct tensor shape
+        let pixels = vec![128u8; 4 * 3 * 3]; // 4w * 3h * 3 channels
+        let tensor = preprocess(&pixels, 4, 3, 3, 640);
+        assert_eq!(tensor.shape(), &[1, 3, 640, 640]);
     }
 
     #[test]
@@ -343,19 +361,28 @@ mod tests {
     #[test]
     fn test_confidence_filter() {
         let boxes = vec![
-            [320.0, 320.0, 100.0, 100.0], // center of 640x640
+            [288.0, 288.0, 100.0, 100.0], // center of 576x576
             [100.0, 100.0, 50.0, 50.0],
         ];
         let scores = vec![0.8, 0.1]; // second below threshold
 
-        let dets = postprocess(&boxes, &scores, 0.3);
+        let dets = postprocess(&boxes, &scores, 0.3, 576);
         assert_eq!(dets.len(), 1);
         assert!((dets[0].confidence - 0.8).abs() < f32::EPSILON);
     }
 
     #[test]
+    fn test_confidence_filter_640() {
+        // Verify postprocess works with 640 input size too
+        let boxes = vec![[320.0, 320.0, 100.0, 100.0]];
+        let scores = vec![0.8];
+        let dets = postprocess(&boxes, &scores, 0.3, 640);
+        assert_eq!(dets.len(), 1);
+    }
+
+    #[test]
     fn test_detection_empty_input() {
-        let dets = postprocess(&[], &[], 0.3);
+        let dets = postprocess(&[], &[], 0.3, 576);
         assert!(dets.is_empty());
     }
 
@@ -405,10 +432,10 @@ mod tests {
 
     #[test]
     fn test_postprocess_cxcywh_conversion() {
-        // Center at (320,320) with size (640,640) should yield x=0, y=0, w=1, h=1
-        let boxes = vec![[320.0, 320.0, 640.0, 640.0]];
+        // Center at (288,288) with size (576,576) should yield x=0, y=0, w=1, h=1
+        let boxes = vec![[288.0, 288.0, 576.0, 576.0]];
         let scores = vec![0.9];
-        let dets = postprocess(&boxes, &scores, 0.3);
+        let dets = postprocess(&boxes, &scores, 0.3, 576);
         assert_eq!(dets.len(), 1);
         assert!((dets[0].x).abs() < 0.01);
         assert!((dets[0].y).abs() < 0.01);

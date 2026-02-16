@@ -1,5 +1,6 @@
 """Readiness, executor, and selftest routes."""
 
+import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
@@ -93,6 +94,14 @@ async def get_readiness_status() -> dict:
             if tts_engine is not None and tts_engine.available
             else "TTS engine unavailable — browser fallback active.",
         },
+        {
+            "name": "detection_model_available",
+            "ok": os.path.isfile(settings.detection_model_path),
+            "required": False,
+            "detail": f"Detection model loaded from {settings.detection_model_path}."
+            if os.path.isfile(settings.detection_model_path)
+            else f"Detection model not found at {settings.detection_model_path} — VLM fallback active.",
+        },
     ]
 
     ok = all(item["ok"] for item in checks if item.get("required", True))
@@ -127,6 +136,9 @@ async def get_readiness_status() -> dict:
             "bridge_connected": bridge.connected,
             "tts_available": tts_engine is not None and tts_engine.available,
             "tts_engine": "kokoro-82m" if tts_engine is not None and tts_engine.available else "unavailable",
+            "detection_model_available": os.path.isfile(settings.detection_model_path),
+            "detection_model_path": settings.detection_model_path,
+            "vision_mode": settings.vision_mode,
             "vision_agent_enabled": settings.vision_agent_enabled,
             "required_total": required_total,
             "required_passed": required_passed,

@@ -65,6 +65,7 @@ mod tests {
             detection_enabled: false,
             detection_model_path: String::new(),
             detection_confidence: 0.3,
+            detection_input_size: 576,
         };
 
         // Should return immediately when idle_enabled is false

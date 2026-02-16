@@ -118,7 +118,7 @@ fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
     // Run UI element detection on raw pixels (if model is available)
     let detections = if config.detection_enabled {
         let detector = DETECTOR.get_or_init(|| {
-            Detector::new(&config.detection_model_path, config.detection_confidence)
+            Detector::new(&config.detection_model_path, config.detection_confidence, config.detection_input_size)
         });
         if let (Some(det), Some((w, h, ref pixels))) = (detector.as_ref(), &raw_pixels) {
             let dets = det.detect(pixels, *w, *h, 3); // 3-channel BGR
@@ -158,6 +158,12 @@ fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
 
     result.insert("window_title".to_string(), serde_json::Value::String(title));
     result.insert("process_exe".to_string(), serde_json::Value::String(process));
+
+    // Include screenshot dimensions so the backend can do pixel-accurate merging
+    if let Some((w, h, _)) = &raw_pixels {
+        result.insert("screenshot_width".to_string(), serde_json::json!(*w));
+        result.insert("screenshot_height".to_string(), serde_json::json!(*h));
+    }
 
     let mut cmd_result = CommandResult::success(&cmd.command_id, result);
     cmd_result.screenshot_b64 = screenshot_b64;

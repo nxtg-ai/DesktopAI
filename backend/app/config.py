@@ -115,6 +115,9 @@ class Settings:
     tts_default_speed: float = float(_env("TTS_DEFAULT_SPEED", "1.0"))
 
     vision_mode: str = _env("VISION_MODE", "auto")
+    detection_model_path: str = _env(
+        "DETECTION_MODEL_PATH", "models/ui-detr/ui-detr-1.onnx"
+    )
     detection_confidence_threshold: float = float(
         _env("DETECTION_CONFIDENCE_THRESHOLD", "0.3")
     )

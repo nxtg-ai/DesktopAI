@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
@@ -137,6 +138,8 @@ class AgentObservation:
     timestamp: datetime
     detections: Optional[List[Dict[str, Any]]] = None
     uia_elements: Optional[List[Dict[str, Any]]] = None
+    screenshot_width: int = 1024
+    screenshot_height: int = 768
 
 
 @dataclass(frozen=True)
@@ -356,14 +359,17 @@ class VisionAgent:
         uia_elements = None
         if uia_raw and isinstance(uia_raw, dict):
             uia_elements = uia_raw.get("window_tree", [])
+        inner = result.get("result", {})
         return AgentObservation(
             screenshot_b64=result.get("screenshot_b64"),
             uia_summary=json.dumps(uia_raw) if uia_raw else None,
-            window_title=result.get("result", {}).get("window_title", ""),
-            process_exe=result.get("result", {}).get("process_exe", ""),
+            window_title=inner.get("window_title", ""),
+            process_exe=inner.get("process_exe", ""),
             timestamp=datetime.now(timezone.utc),
             detections=result.get("detections"),
             uia_elements=uia_elements,
+            screenshot_width=int(inner.get("screenshot_width", 1024)),
+            screenshot_height=int(inner.get("screenshot_height", 768)),
         )
 
     def _should_use_detection(self, observation: AgentObservation) -> bool:
@@ -403,13 +409,15 @@ class VisionAgent:
         detections = observation.detections or []
         uia_elements = observation.uia_elements or []
 
+        t_merge_start = time.monotonic()
         merged = merge_detections_with_uia(
             detections,
             uia_elements,
-            image_width=1024,
-            image_height=768,
+            image_width=observation.screenshot_width,
+            image_height=observation.screenshot_height,
             iou_threshold=self._detection_merge_iou,
         )
+        merge_ms = (time.monotonic() - t_merge_start) * 1000
         self._merged_elements = merged
         element_list = format_element_list(merged) if merged else "(no elements detected)"
 
@@ -429,11 +437,18 @@ class VisionAgent:
 
         messages = [{"role": "user", "content": prompt}]
 
+        t_llm_start = time.monotonic()
         try:
             response = await self._ollama.chat(messages)
         except Exception as exc:
             logger.warning("VisionAgent detection reasoning failed: %s", exc)
             return AgentAction(action="wait", parameters={}, reasoning=f"reasoning error: {exc}")
+        llm_ms = (time.monotonic() - t_llm_start) * 1000
+        total_ms = merge_ms + llm_ms
+        logger.info(
+            "Detection pipeline: %d elements, merge=%.0fms, llm=%.0fms, total=%.0fms",
+            len(merged), merge_ms, llm_ms, total_ms,
+        )
 
         action = self._parse_action(response)
 
