@@ -751,8 +751,10 @@ fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
     let pattern_lower = title_pattern.to_lowercase();
 
     // Iterate visible windows to find the best match.
-    // Prefer shorter titles (closer to exact match) so "Notepad" beats "Notepad++".
+    // Score: 2 = word-boundary match (pattern not followed by alphanumeric),
+    //        1 = substring match. Higher score wins; ties broken by shorter title.
     let mut target = HWND(0);
+    let mut best_score: u8 = 0;
     let mut best_len = usize::MAX;
 
     if !title_pattern.is_empty() {
@@ -763,10 +765,18 @@ fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
             if len > 0 {
                 let title = String::from_utf16_lossy(&buf[..len as usize]);
                 let title_lower = title.to_lowercase();
-                if title_lower.contains(&pattern_lower) {
-                    if unsafe { IsWindowVisible(current) }.as_bool() && title.len() < best_len {
-                        target = current;
-                        best_len = title.len();
+                if let Some(pos) = title_lower.find(&pattern_lower) {
+                    if unsafe { IsWindowVisible(current) }.as_bool() {
+                        // Check if pattern ends at a word boundary (not followed by alphanumeric)
+                        let end = pos + pattern_lower.len();
+                        let is_word_boundary = end >= title_lower.len()
+                            || !title_lower[end..].starts_with(|c: char| c.is_alphanumeric() || c == '+');
+                        let score = if is_word_boundary { 2 } else { 1 };
+                        if score > best_score || (score == best_score && title.len() < best_len) {
+                            target = current;
+                            best_score = score;
+                            best_len = title.len();
+                        }
                     }
                 }
             }
