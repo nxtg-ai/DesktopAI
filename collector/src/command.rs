@@ -744,22 +744,23 @@ fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
 
     let pattern_lower = title_pattern.to_lowercase();
 
-    // Iterate visible windows to find match
+    // Iterate visible windows to find the best match.
+    // Prefer shorter titles (closer to exact match) so "Notepad" beats "Notepad++".
     let mut target = HWND(0);
+    let mut best_len = usize::MAX;
 
-    // Use FindWindowW for exact matches, or enumerate
     if !title_pattern.is_empty() {
-        // Enumerate all top-level windows
         let mut buf = [0u16; 512];
         let mut current = unsafe { FindWindowW(PCWSTR::null(), PCWSTR::null()) };
         while current.0 != 0 {
             let len = unsafe { GetWindowTextW(current, &mut buf) };
             if len > 0 {
                 let title = String::from_utf16_lossy(&buf[..len as usize]);
-                if title.to_lowercase().contains(&pattern_lower) {
-                    if unsafe { IsWindowVisible(current) }.as_bool() {
+                let title_lower = title.to_lowercase();
+                if title_lower.contains(&pattern_lower) {
+                    if unsafe { IsWindowVisible(current) }.as_bool() && title.len() < best_len {
                         target = current;
-                        break;
+                        best_len = title.len();
                     }
                 }
             }

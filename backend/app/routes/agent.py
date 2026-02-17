@@ -1,5 +1,6 @@
 """Agent, vision, chat, and bridge routes."""
 
+import asyncio
 import json
 import logging
 import random
@@ -147,6 +148,7 @@ async def _try_direct_command(message: str) -> Optional[dict]:
 
     if action == "_type_in_window":
         await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
+        await asyncio.sleep(0.4)  # Let window fully receive input focus
         result = await bridge.execute("type_text", {"text": params["text"]}, timeout_s=5)
     else:
         result = await bridge.execute(action, params, timeout_s=5)
