@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from .schemas import TaskAction, TaskStepPlan
+
 
 @dataclass(frozen=True)
 class Recipe:
@@ -77,3 +79,26 @@ def match_recipe_by_keywords(text: str) -> Optional[Recipe]:
             if keyword in lower:
                 return recipe
     return None
+
+
+def recipe_to_plan_steps(recipe: Recipe) -> List[TaskStepPlan]:
+    """Convert a recipe's step dicts into TaskStepPlan objects for the orchestrator."""
+    plan_steps: List[TaskStepPlan] = []
+    for step in recipe.steps:
+        action_name = step.get("action", "")
+        params = step.get("params") or step.get("parameters") or {}
+        description = step.get("description", "")
+        irreversible = bool(step.get("irreversible", False))
+        plan_steps.append(
+            TaskStepPlan(
+                action=TaskAction(
+                    action=action_name,
+                    parameters=params,
+                    description=description,
+                    irreversible=irreversible,
+                ),
+                preconditions=step.get("preconditions", []),
+                postconditions=step.get("postconditions", []),
+            )
+        )
+    return plan_steps

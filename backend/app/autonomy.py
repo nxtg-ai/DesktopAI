@@ -19,6 +19,7 @@ from .schemas import (
     AutonomyStartRequest,
     TaskApproveRequest,
     TaskPlanRequest,
+    TaskStepPlan,
 )
 
 
@@ -105,10 +106,34 @@ class AutonomousRunner:
         await self._orchestrator.set_plan(task.task_id, plan)
         planner_mode = str(getattr(self._planner, "mode", "deterministic") or "deterministic")
 
+        return await self._start_run(request, task.task_id, planner_mode)
+
+    async def start_with_plan(
+        self,
+        request: AutonomyStartRequest,
+        plan_steps: List[TaskStepPlan],
+    ) -> AutonomyRunRecord:
+        """Start a run using pre-built plan steps (e.g. from a recipe).
+
+        Bypasses the planner entirely so the caller's exact steps are used.
+        """
+        task = await self._orchestrator.create_task(request.objective)
+        plan = TaskPlanRequest(steps=plan_steps)
+        await self._orchestrator.set_plan(task.task_id, plan)
+
+        return await self._start_run(request, task.task_id, planner_mode="recipe")
+
+    async def _start_run(
+        self,
+        request: AutonomyStartRequest,
+        task_id: str,
+        planner_mode: str,
+    ) -> AutonomyRunRecord:
+        """Create an AutonomyRunRecord, register it, and kick off the worker loop."""
         now = _utcnow()
         run = AutonomyRunRecord(
             run_id=str(uuid4()),
-            task_id=task.task_id,
+            task_id=task_id,
             objective=request.objective,
             planner_mode=planner_mode,
             status="running",

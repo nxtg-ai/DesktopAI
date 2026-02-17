@@ -24,7 +24,7 @@ from ..deps import (
     trajectory_store,
     vision_runner,
 )
-from ..recipes import match_recipe_by_keywords
+from ..recipes import match_recipe_by_keywords, recipe_to_plan_steps
 from ..schemas import AutonomyStartRequest, ChatRequest
 
 logger = logging.getLogger(__name__)
@@ -297,13 +297,14 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
     recipe = match_recipe_by_keywords(message) if request.allow_actions else None
     if recipe:
         try:
+            plan_steps = recipe_to_plan_steps(recipe)
             start_req = AutonomyStartRequest(
                 objective=recipe.description,
                 max_iterations=len(recipe.steps) + 5,
                 parallel_agents=1,
                 auto_approve_irreversible=False,
             )
-            run = await autonomy.start(start_req)
+            run = await autonomy.start_with_plan(start_req, plan_steps)
             action_triggered = True
             run_id = run.run_id
         except Exception as exc:

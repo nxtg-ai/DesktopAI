@@ -5,7 +5,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException
 
 from ..deps import autonomy, store
-from ..recipes import BUILTIN_RECIPES, match_recipes
+from ..recipes import BUILTIN_RECIPES, match_recipes, recipe_to_plan_steps
 from ..schemas import AutonomyStartRequest
 
 router = APIRouter()
@@ -32,11 +32,12 @@ async def run_recipe(recipe_id: str) -> dict:
     if recipe is None:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
+    plan_steps = recipe_to_plan_steps(recipe)
     start_req = AutonomyStartRequest(
         objective=recipe.description,
         max_iterations=len(recipe.steps) + 5,
         parallel_agents=1,
         auto_approve_irreversible=False,
     )
-    run = await autonomy.start(start_req)
+    run = await autonomy.start_with_plan(start_req, plan_steps)
     return {"run_id": run.run_id, "recipe": asdict(recipe)}

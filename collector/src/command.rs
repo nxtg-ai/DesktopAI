@@ -688,6 +688,47 @@ fn handle_open_application(cmd: &Command, _config: &Config) -> CommandResult {
     CommandResult::failure(&cmd.command_id, "open_application requires Windows")
 }
 
+/// Simulate an ALT key press+release via SendInput.
+///
+/// Windows prevents `SetForegroundWindow` from working unless the calling
+/// process already owns the foreground or was the last to receive user input.
+/// By injecting a synthetic ALT keystroke we satisfy the foreground-lock
+/// check so the subsequent `SetForegroundWindow` call actually succeeds.
+#[cfg(windows)]
+fn simulate_alt_key() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+    let inputs = [
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_MENU,
+                    wScan: 0,
+                    dwFlags: KEYBD_EVENT_FLAGS(0),
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_MENU,
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        },
+    ];
+    unsafe {
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
 #[cfg(windows)]
 fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
     use windows::Win32::Foundation::HWND;
@@ -731,7 +772,12 @@ fn handle_focus_window(cmd: &Command, config: &Config) -> CommandResult {
         return CommandResult::failure(&cmd.command_id, &format!("window not found matching: {title_pattern}"));
     }
 
+    // Restore if minimized, then use ALT trick to bypass foreground lock
     unsafe {
+        if IsIconic(target).as_bool() {
+            let _ = ShowWindow(target, SW_RESTORE);
+        }
+        simulate_alt_key();
         let _ = SetForegroundWindow(target);
     }
 
@@ -1158,5 +1204,48 @@ mod tests {
         assert!(!result.ok);
         assert!(result.error.as_ref().unwrap().contains("click requires"));
         assert!(result.error.as_ref().unwrap().contains("x")); // mentions x/y
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_focus_window_requires_windows() {
+        let config = Config::from_env();
+        let mut params = HashMap::new();
+        params.insert("title".to_string(), serde_json::json!("Notepad"));
+        let cmd = Command {
+            command_id: "fw-1".to_string(),
+            action: "focus_window".to_string(),
+            parameters: params,
+            timeout_ms: 5000,
+        };
+        let result = execute_command(&cmd, &config);
+        assert!(!result.ok);
+        assert!(result.error.as_ref().unwrap().contains("requires Windows"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_focus_window_missing_params() {
+        // Even on non-Windows, the stub should return a "requires Windows" error
+        let config = Config::from_env();
+        let cmd = Command {
+            command_id: "fw-2".to_string(),
+            action: "focus_window".to_string(),
+            parameters: HashMap::new(),
+            timeout_ms: 5000,
+        };
+        let result = execute_command(&cmd, &config);
+        assert!(!result.ok);
+        assert!(result.error.is_some());
+    }
+
+    /// Verify simulate_alt_key compiles and is callable on Windows.
+    /// On non-Windows this test just verifies the module structure.
+    #[cfg(windows)]
+    #[test]
+    fn test_simulate_alt_key_callable() {
+        // Should not panic — on a test environment SendInput may return 0
+        // (no events injected) but that's fine.
+        simulate_alt_key();
     }
 }

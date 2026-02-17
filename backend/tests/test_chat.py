@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.main import app, autonomy, bridge, chat_memory, ollama, store, vision_runner
+from app.recipes import Recipe, recipe_to_plan_steps
 from httpx import ASGITransport, AsyncClient
 
 
@@ -948,3 +949,156 @@ async def test_context_response_includes_recent_apps(client):
     assert "recent_apps" in data
     assert isinstance(data["recent_apps"], list)
     assert len(data["recent_apps"]) >= 1
+
+
+# ── Recipe → orchestrator pipeline tests ─────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_recipe_keyword_triggers_orchestrator_with_plan(client):
+    """Recipe keyword match calls autonomy.start_with_plan() with recipe steps."""
+    event = _seed_event()
+    await store.record(event)
+
+    mock_run = MagicMock()
+    mock_run.run_id = "recipe-run-123"
+    mock_run.status = "running"
+    mock_run.model_copy = MagicMock(return_value=mock_run)
+
+    with patch.object(
+        autonomy, "start_with_plan", new_callable=AsyncMock, return_value=mock_run
+    ) as mock_start, \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "draft reply to this email", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    assert data["run_id"] == "recipe-run-123"
+
+    # Verify start_with_plan was called (not start)
+    mock_start.assert_called_once()
+    call_args = mock_start.call_args
+    start_req = call_args[0][0]
+    plan_steps = call_args[0][1]
+
+    # The objective should be the recipe description
+    assert "reply" in start_req.objective.lower()
+    # The plan steps should come from the recipe, not the planner
+    assert len(plan_steps) >= 1
+    action_names = [s.action.action for s in plan_steps]
+    assert "observe_desktop" in action_names
+    assert "compose_text" in action_names
+
+
+@pytest.mark.anyio
+async def test_recipe_returns_run_id_in_response(client):
+    """Recipe execution response includes the run_id from the orchestrator."""
+    event = _seed_event()
+    await store.record(event)
+
+    mock_run = MagicMock()
+    mock_run.run_id = "run-abc-456"
+    mock_run.status = "running"
+    mock_run.model_copy = MagicMock(return_value=mock_run)
+
+    with patch.object(
+        autonomy, "start_with_plan", new_callable=AsyncMock, return_value=mock_run
+    ), \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "summarize this document", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    assert data["run_id"] == "run-abc-456"
+
+
+@pytest.mark.anyio
+async def test_recipe_failure_handled_gracefully(client):
+    """If recipe orchestrator call fails, chat doesn't crash — falls through."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(
+        autonomy, "start_with_plan", new_callable=AsyncMock,
+        side_effect=RuntimeError("orchestrator exploded"),
+    ), \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "draft reply", "allow_actions": True},
+        )
+
+    # Should still return 200 — not crash
+    assert resp.status_code == 200
+    data = resp.json()
+    # action_triggered should be False since the recipe call failed
+    # and no direct pattern matched either
+    assert "response" in data
+
+
+@pytest.mark.anyio
+async def test_recipe_not_triggered_when_allow_actions_false(client):
+    """Recipe keyword match is skipped when allow_actions=False."""
+    event = _seed_event()
+    await store.record(event)
+
+    with patch.object(
+        autonomy, "start_with_plan", new_callable=AsyncMock
+    ) as mock_start, \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "draft reply", "allow_actions": False},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is False
+    mock_start.assert_not_called()
+
+
+def test_recipe_to_plan_steps_conversion():
+    """recipe_to_plan_steps converts Recipe step dicts to TaskStepPlan objects."""
+    recipe = Recipe(
+        recipe_id="test_recipe",
+        name="Test Recipe",
+        description="A test recipe",
+        steps=[
+            {"action": "observe_desktop"},
+            {"action": "compose_text", "params": {"intent": "reply"}},
+            {"action": "send_keys", "params": {"keys": "{ENTER}"}, "irreversible": True},
+        ],
+        context_patterns=[r".*"],
+        keywords=["test"],
+    )
+
+    plan_steps = recipe_to_plan_steps(recipe)
+    assert len(plan_steps) == 3
+    assert plan_steps[0].action.action == "observe_desktop"
+    assert plan_steps[0].action.parameters == {}
+    assert plan_steps[1].action.action == "compose_text"
+    assert plan_steps[1].action.parameters == {"intent": "reply"}
+    assert plan_steps[2].action.action == "send_keys"
+    assert plan_steps[2].action.parameters == {"keys": "{ENTER}"}
+    assert plan_steps[2].action.irreversible is True
+
+
+def test_recipe_to_plan_steps_empty():
+    """recipe_to_plan_steps handles empty steps list."""
+    recipe = Recipe(
+        recipe_id="empty",
+        name="Empty",
+        description="No steps",
+        steps=[],
+        context_patterns=[],
+        keywords=[],
+    )
+    assert recipe_to_plan_steps(recipe) == []
