@@ -32,7 +32,7 @@ function appendChatMessage(role, text, meta = {}) {
     if (meta.action_triggered) {
       const badge = document.createElement("span");
       badge.className = "chat-badge action";
-      badge.textContent = meta.run_id ? `action: ${meta.run_id.slice(0, 8)}` : "action started";
+      badge.textContent = meta.run_id ? `run: ${meta.run_id.slice(0, 8)}` : meta.source === "direct" ? "executed" : "action started";
       badges.appendChild(badge);
     }
     if (badges.childNodes.length > 0) msg.appendChild(badges);

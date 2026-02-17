@@ -1,5 +1,32 @@
 # DesktopAI - Claude Code Project Guide
 
+## ASIF Portfolio Context
+
+This project is **P-01** in the [ASIF portfolio](~/ASIF/PORTFOLIO.md) — the first and most mature project in the NXTG.ai ecosystem.
+
+- **NEXUS**: `.asif/NEXUS.md` — 18 initiatives, 6 vision pillars. Open this at the start of every session.
+- **One-on-one notes**: `.asif/one-on-one/` — collaboration space between Asif and the tech lead.
+- **Cross-project shared patterns**: This project's `OllamaClient`, `TtsEngine`, SQLite WAL pattern, and SSE streaming are reusable across ASIF projects.
+- **Key governance rules** (from ASIF):
+  - AGPL dependencies are **blocked** — check `~/ASIF/standards/tech-stack-registry.md` before adding new tech
+  - Rust owns the desktop, Python owns the brain — locked architectural decision
+  - Test counts never decrease
+  - MANIFESTO.md is sacred — never modify
+  - Local-first, not local-only
+- **Cross-project dependencies**:
+  - Could integrate with P-05 (dx3) for deep context storage (augmenting SQLite)
+  - Could send captured text to P-13 (2Brain) for classification
+  - DyTopo semantic routing module could be shared with P-02 (GoPMO)
+- **Handoff notes**: Check `~/ASIF/machines/HANDOFF.md` for cross-machine coordination notes.
+
+### ASIF Governance
+This project is governed by the ASIF portfolio. On every session:
+1. Read `.asif/NEXUS.md` — check for `## CoS Directives` section
+2. Execute any PENDING directives before other work (unless Asif overrides)
+3. Write your response inline under each directive
+4. Update initiative statuses in NEXUS if your work changes them
+5. If you have questions for the CoS, add them under `## Team Questions` in NEXUS
+
 ## Project Vision
 An intelligent desktop assistant that observes user activity and can autonomously execute tasks like drafting emails, managing windows, and automating workflows. Read `myVISION.md` for the canonical product vision — every feature must trace back to it.
 
