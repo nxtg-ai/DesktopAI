@@ -18,6 +18,7 @@ pub mod windows;
 pub mod screenshot;
 
 pub mod command;
+#[cfg(feature = "detection")]
 pub mod detection;
 
 // Re-export public types for testability and external use

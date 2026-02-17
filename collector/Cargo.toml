@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "desktopai-collector"
 path = "src/main.rs"
 
+[features]
+default = ["detection"]
+detection = ["ort", "ndarray"]
+
 [dependencies]
 chrono = { version = "0.4", features = ["clock"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -37,8 +41,8 @@ log = "0.4"
 env_logger = "0.11"
 jpeg-encoder = "0.6"
 base64 = "0.22"
-ort = { version = "=2.0.0-rc.9", features = ["load-dynamic"] }
-ndarray = "0.16"
+ort = { version = "=2.0.0-rc.9", features = ["load-dynamic"], optional = true }
+ndarray = { version = "0.16", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0"

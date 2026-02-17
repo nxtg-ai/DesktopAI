@@ -91,9 +91,12 @@ pub fn execute_command(cmd: &Command, _config: &Config) -> CommandResult {
 
 #[cfg(windows)]
 fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
+    #[cfg(feature = "detection")]
     use std::sync::OnceLock;
+    #[cfg(feature = "detection")]
     use crate::detection::Detector;
 
+    #[cfg(feature = "detection")]
     static DETECTOR: OnceLock<Option<Detector>> = OnceLock::new();
 
     let mut result = HashMap::new();
@@ -116,6 +119,7 @@ fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
     };
 
     // Run UI element detection on raw pixels (if model is available)
+    #[cfg(feature = "detection")]
     let detections = if config.detection_enabled {
         let detector = DETECTOR.get_or_init(|| {
             let d = Detector::new(&config.detection_model_path, config.detection_confidence, config.detection_input_size);
@@ -141,6 +145,8 @@ fn handle_observe(cmd: &Command, config: &Config) -> CommandResult {
     } else {
         None
     };
+    #[cfg(not(feature = "detection"))]
+    let detections: Option<serde_json::Value> = None;
 
     // Get foreground window info
     use crate::windows::{window_title, process_path};
