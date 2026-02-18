@@ -138,7 +138,7 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
             app = self._map_application_alias(app)
             script = (
                 "$ErrorActionPreference='Stop'; "
-                f"Start-Process -FilePath {self._ps_quote(app)}; "
+                f"Start-Process -FilePath {self._ps_quote_app_name(app)}; "
                 "Start-Sleep -Milliseconds 600; "
                 f"Write-Output {self._ps_quote(f'started:{app}')}"
             )
@@ -249,6 +249,8 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
         if action_name not in self._VALID_ACTIONS:
             raise RuntimeError(f"unsupported action for windows executor: {action_name}")
 
+    _PS_METACHARACTERS = frozenset("$`|&;")
+
     def _ps_quote(self, value: str) -> str:
         if "\x00" in value:
             raise ValueError("PowerShell input must not contain null bytes")
@@ -257,6 +259,20 @@ class WindowsPowerShellActionExecutor(TaskActionExecutor):
                 f"PowerShell input too long ({len(value)} chars, max {self._PS_MAX_VALUE_LEN})"
             )
         return "'" + value.replace("'", "''") + "'"
+
+    def _ps_quote_app_name(self, value: str) -> str:
+        """Quote an application name for Start-Process, rejecting metacharacters.
+
+        Application names passed to Start-Process -FilePath should never contain
+        PowerShell metacharacters ($, `, |, &, ;) as these could allow command
+        injection even inside single quotes in certain contexts.
+        """
+        bad = self._PS_METACHARACTERS.intersection(value)
+        if bad:
+            raise ValueError(
+                f"PowerShell metacharacter(s) {bad!r} in application name"
+            )
+        return self._ps_quote(value)
 
     def _map_application_alias(self, value: str) -> str:
         aliases = {

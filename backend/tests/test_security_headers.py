@@ -80,3 +80,33 @@ def test_permissions_policy():
     client = TestClient(app)
     resp = client.get("/api/health")
     assert resp.headers.get("Permissions-Policy") == "camera=(), microphone=(), geolocation=()"
+
+
+# ── CORS middleware tests ────────────────────────────────────────────────
+
+def test_cors_middleware_always_present():
+    """CORSMiddleware must always be installed, even when ALLOWED_ORIGINS is empty."""
+    from starlette.middleware.cors import CORSMiddleware as _CM
+
+    found = False
+    for middleware in app.user_middleware:
+        if middleware.cls is _CM:
+            found = True
+            break
+    assert found, "CORSMiddleware must always be registered on the app"
+
+
+def test_cors_default_origin_when_env_empty():
+    """When ALLOWED_ORIGINS is empty, CORS should default to localhost:8000."""
+    from app.main import _cors_origins
+
+    origins = _cors_origins([])
+    assert origins == ["http://localhost:8000"]
+
+
+def test_cors_uses_configured_origins():
+    """When ALLOWED_ORIGINS is set, those origins should be used as-is."""
+    from app.main import _cors_origins
+
+    origins = _cors_origins(["https://example.com", "https://other.com"])
+    assert origins == ["https://example.com", "https://other.com"]

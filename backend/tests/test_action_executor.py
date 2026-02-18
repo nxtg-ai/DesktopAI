@@ -260,3 +260,63 @@ def test_auto_mode_prefers_bridge_even_when_not_connected():
             "bridge is not yet connected — runtime disconnection is handled by "
             "BridgeActionExecutor.execute(), not the factory"
         )
+
+
+# ── _ps_quote metacharacter validation tests ─────────────────────────────
+
+def test_ps_quote_rejects_dollar_sign():
+    """PowerShell $variable metacharacter must be rejected in app names."""
+    exe = _make_ps_executor()
+    with pytest.raises(ValueError, match="metacharacter"):
+        exe._ps_quote_app_name("$env:USERPROFILE")
+
+
+def test_ps_quote_rejects_backtick():
+    """PowerShell backtick escape must be rejected in app names."""
+    exe = _make_ps_executor()
+    with pytest.raises(ValueError, match="metacharacter"):
+        exe._ps_quote_app_name("app`whoami")
+
+
+def test_ps_quote_rejects_pipe():
+    """PowerShell pipe must be rejected in app names."""
+    exe = _make_ps_executor()
+    with pytest.raises(ValueError, match="metacharacter"):
+        exe._ps_quote_app_name("app|evil")
+
+
+def test_ps_quote_rejects_ampersand():
+    """PowerShell ampersand (command chaining) must be rejected in app names."""
+    exe = _make_ps_executor()
+    with pytest.raises(ValueError, match="metacharacter"):
+        exe._ps_quote_app_name("app&calc")
+
+
+def test_ps_quote_rejects_semicolon():
+    """PowerShell semicolon (statement separator) must be rejected in app names."""
+    exe = _make_ps_executor()
+    with pytest.raises(ValueError, match="metacharacter"):
+        exe._ps_quote_app_name("app;rm -rf /")
+
+
+def test_ps_quote_app_name_allows_clean_names():
+    """Normal application names should pass validation."""
+    exe = _make_ps_executor()
+    for name in ["notepad.exe", "Code.exe", "chrome.exe", "ms-teams.exe", "outlook"]:
+        result = exe._ps_quote_app_name(name)
+        assert result.startswith("'")
+        assert result.endswith("'")
+
+
+def test_ps_quote_app_name_allows_paths():
+    """Application paths with backslashes and spaces should pass."""
+    exe = _make_ps_executor()
+    result = exe._ps_quote_app_name("C:\\Program Files\\App\\app.exe")
+    assert "C:\\Program Files\\App\\app.exe" in result
+
+
+def test_ps_quote_app_name_escapes_single_quotes():
+    """Single quotes in app names should still be escaped."""
+    exe = _make_ps_executor()
+    result = exe._ps_quote_app_name("it's app.exe")
+    assert "''" in result

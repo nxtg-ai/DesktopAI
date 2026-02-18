@@ -707,3 +707,114 @@ def test_chat_stream_yields_tokens(monkeypatch):
         assert events[2]["done"] is True
 
     asyncio.run(scenario())
+
+
+# ── Fallback model tests ────────────────────────────────────────────
+
+
+def test_fallback_model_used_when_circuit_breaker_open(monkeypatch):
+    """When circuit breaker is open and fallback model is configured, use it."""
+    models_used = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **kwargs):
+            model = kwargs.get("json", {}).get("model")
+            models_used.append(model)
+            return _Resp(200, {"message": {"role": "assistant", "content": "fallback ok"}})
+
+    async def scenario():
+        monkeypatch.setattr("app.ollama.httpx.AsyncClient", _Client)
+        client = OllamaClient(
+            "http://localhost:11434", "qwen2.5vl:7b",
+            fallback_model="qwen2.5:3b",
+        )
+        # Manually open circuit
+        client._consecutive_failures = 5
+        client._circuit_open_until = time.monotonic() + 60
+
+        out = await client.chat([{"role": "user", "content": "hello"}])
+        assert out == "fallback ok"
+        assert models_used == ["qwen2.5:3b"]
+        # Success resets the circuit breaker
+        assert client._consecutive_failures == 0
+
+    asyncio.run(scenario())
+
+
+def test_fallback_model_not_used_when_circuit_breaker_closed(monkeypatch):
+    """When circuit breaker is closed, primary model is used (not fallback)."""
+    models_used = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **kwargs):
+            model = kwargs.get("json", {}).get("model")
+            models_used.append(model)
+            return _Resp(200, {"message": {"role": "assistant", "content": "primary ok"}})
+
+    async def scenario():
+        monkeypatch.setattr("app.ollama.httpx.AsyncClient", _Client)
+        client = OllamaClient(
+            "http://localhost:11434", "qwen2.5vl:7b",
+            fallback_model="qwen2.5:3b",
+        )
+        # Circuit breaker is NOT open (default state)
+
+        out = await client.chat([{"role": "user", "content": "hello"}])
+        assert out == "primary ok"
+        assert models_used == ["qwen2.5vl:7b"]
+
+    asyncio.run(scenario())
+
+
+def test_fallback_not_used_when_not_configured(monkeypatch):
+    """When no fallback model is configured, circuit breaker open returns None."""
+    http_calls = 0
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal http_calls
+            http_calls += 1
+            return _Resp(200, {"message": {"role": "assistant", "content": "ok"}})
+
+    async def scenario():
+        monkeypatch.setattr("app.ollama.httpx.AsyncClient", _Client)
+        client = OllamaClient(
+            "http://localhost:11434", "qwen2.5vl:7b",
+            fallback_model="",  # No fallback
+        )
+        # Manually open circuit
+        client._consecutive_failures = 5
+        client._circuit_open_until = time.monotonic() + 60
+
+        out = await client.chat([{"role": "user", "content": "hello"}])
+        assert out is None
+        assert http_calls == 0  # No HTTP call made
+
+    asyncio.run(scenario())

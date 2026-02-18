@@ -275,11 +275,12 @@ async def test_chat_omits_screenshot_when_unavailable(client):
 
 @pytest.mark.anyio
 async def test_chat_scroll_triggers_action(client):
-    """'scroll down' should be detected as an action intent."""
+    """'scroll down in Notepad' should be detected as a direct scroll-in-window action."""
     event = _seed_event()
     await store.record(event)
 
-    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
         resp = await client.post(
             "/api/chat",
             json={"message": "scroll down in Notepad", "allow_actions": True},
@@ -288,6 +289,7 @@ async def test_chat_scroll_triggers_action(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data.get("action_triggered") is True
+    assert data["source"] == "direct"
 
 
 def test_personality_prompts_copilot_concise():
@@ -418,8 +420,8 @@ async def test_direct_type_in_window(client):
 
 
 @pytest.mark.anyio
-async def test_direct_scroll(client):
-    """'scroll down' should call scroll via bridge with default amount."""
+async def test_direct_scroll_no_recent_windows(client):
+    """'scroll down' with no recent foreground windows just scrolls normally."""
     ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
     with ws_patch, exec_patch:
         resp = await client.post(
@@ -431,6 +433,7 @@ async def test_direct_scroll(client):
     data = resp.json()
     assert data["action_triggered"] is True
     assert data["source"] == "direct"
+    # No recent windows → only scroll call, no focus_window
     mock_exec.assert_called_once_with(
         "scroll", {"direction": "down", "amount": 3}, timeout_s=5,
     )
@@ -646,6 +649,151 @@ async def test_direct_right_click(client):
     mock_exec.assert_called_once_with(
         "right_click", {"name": "Desktop"}, timeout_s=5,
     )
+
+
+# ── Scroll focus-redirection tests (F001) ─────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_scroll_focuses_previous_non_browser_window(client):
+    """Bare 'scroll down' focuses the last non-browser foreground window first."""
+    from app.schemas import WindowEvent
+
+    now = datetime.now(timezone.utc)
+
+    # Simulate: user was in Notepad, then switched to browser to chat
+    e1 = WindowEvent(
+        type="foreground", hwnd="0x1", title="Untitled - Notepad",
+        process_exe="notepad.exe", pid=100, timestamp=now, source="test",
+    )
+    e2 = WindowEvent(
+        type="foreground", hwnd="0x2", title="DesktopAI Live Context - Chrome",
+        process_exe="chrome.exe", pid=200, timestamp=now, source="test",
+    )
+    await store.record(e1)
+    await store.record(e2)
+
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "scroll down", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    assert data["action_triggered"] is True
+    # Should have: focus_window("Untitled - Notepad") then scroll
+    assert mock_exec.call_count == 2
+    mock_exec.assert_any_call("focus_window", {"title": "Untitled - Notepad"}, timeout_s=5)
+    mock_exec.assert_any_call("scroll", {"direction": "down", "amount": 3}, timeout_s=5)
+
+
+@pytest.mark.anyio
+async def test_scroll_in_window_focuses_named_target(client):
+    """'scroll down in Notepad' focuses Notepad first, then scrolls."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "scroll down in Notepad", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    assert data["action_triggered"] is True
+    assert mock_exec.call_count == 2
+    mock_exec.assert_any_call("focus_window", {"title": "Notepad"}, timeout_s=5)
+    mock_exec.assert_any_call("scroll", {"direction": "down", "amount": 3}, timeout_s=5)
+    # Friendly response should mention the target window
+    assert "notepad" in data["response"].lower()
+
+
+@pytest.mark.anyio
+async def test_scroll_up_in_window(client):
+    """'scroll up on Word' focuses Word then scrolls up."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "scroll up on Word", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    assert mock_exec.call_count == 2
+    mock_exec.assert_any_call("focus_window", {"title": "Word"}, timeout_s=5)
+    mock_exec.assert_any_call("scroll", {"direction": "up", "amount": 3}, timeout_s=5)
+
+
+@pytest.mark.anyio
+async def test_scroll_skips_all_browser_windows(client):
+    """If all recent windows are browsers, scroll just scrolls normally."""
+    from app.schemas import WindowEvent
+
+    now = datetime.now(timezone.utc)
+
+    # Only browser windows in recent history
+    e1 = WindowEvent(
+        type="foreground", hwnd="0x1", title="Google - Chrome",
+        process_exe="chrome.exe", pid=100, timestamp=now, source="test",
+    )
+    e2 = WindowEvent(
+        type="foreground", hwnd="0x2", title="DesktopAI Live Context",
+        process_exe="chrome.exe", pid=200, timestamp=now, source="test",
+    )
+    await store.record(e1)
+    await store.record(e2)
+
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "scroll down", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    # No non-browser window found → only scroll call
+    mock_exec.assert_called_once_with(
+        "scroll", {"direction": "down", "amount": 3}, timeout_s=5,
+    )
+
+
+def test_scroll_in_window_pattern_matches():
+    """Verify the _scroll_in_window regex pattern matches expected inputs."""
+    from app.routes.agent import _match_direct_pattern
+
+    result = _match_direct_pattern("scroll down in Notepad")
+    assert result is not None
+    assert result[0] == "_scroll_in_window"
+    assert result[1]["direction"] == "down"
+    assert result[1]["window"] == "Notepad"
+
+    result = _match_direct_pattern("scroll up on Microsoft Word")
+    assert result is not None
+    assert result[0] == "_scroll_in_window"
+    assert result[1]["direction"] == "up"
+    assert result[1]["window"] == "Microsoft Word"
+
+
+def test_bare_scroll_pattern_does_not_match_scroll_in():
+    """Bare scroll pattern should NOT match 'scroll down in ...' (anchored with $)."""
+    from app.routes.agent import _match_direct_pattern
+
+    # "scroll down" should match generic scroll
+    result = _match_direct_pattern("scroll down")
+    assert result is not None
+    assert result[0] == "scroll"
+
+    # "scroll down in Notepad" should match _scroll_in_window, not scroll
+    result = _match_direct_pattern("scroll down in Notepad")
+    assert result is not None
+    assert result[0] == "_scroll_in_window"
 
 
 # ── SSE Streaming tests ─────────────────────────────────────────────

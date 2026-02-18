@@ -133,6 +133,7 @@ async def get_readiness_status() -> dict:
             "ollama_last_error": ollama_diagnostics.get("last_error"),
             "ollama_consecutive_failures": ollama_diagnostics.get("consecutive_failures", 0),
             "ollama_circuit_open": ollama_diagnostics.get("circuit_open", False),
+            "ollama_fallback_model": ollama_diagnostics.get("fallback_model", ""),
             "bridge_connected": bridge.connected,
             "tts_available": tts_engine is not None and tts_engine.available,
             "tts_engine": "kokoro-82m" if tts_engine is not None and tts_engine.available else "unavailable",

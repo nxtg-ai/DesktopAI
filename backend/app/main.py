@@ -105,14 +105,19 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="DesktopAI Backend", version="0.1.0", lifespan=_lifespan)
 
-if settings.allowed_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.allowed_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept"],
-    )
+
+def _cors_origins(configured: list[str]) -> list[str]:
+    """Return CORS origins, defaulting to localhost:8000 when none configured."""
+    return configured if configured else ["http://localhost:8000"]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(settings.allowed_origins),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)
 
 app.add_middleware(TokenAuthMiddleware)
 

@@ -59,14 +59,28 @@ function renderNotifications(items) {
     dropdownEl.innerHTML = '<p class="notification-empty">No notifications</p>';
     return;
   }
-  dropdownEl.innerHTML = items.map((n) => {
+  dropdownEl.innerHTML = "";
+  items.forEach((n) => {
     const readClass = n.read_at ? "read" : "unread";
-    return `<div class="notification-item ${readClass}" data-id="${n.notification_id}">
-      <strong>${n.title}</strong>
-      <p>${n.message}</p>
-      <span class="notification-time">${n.created_at}</span>
-    </div>`;
-  }).join("");
+    const item = document.createElement("div");
+    item.className = `notification-item ${readClass}`;
+    item.dataset.id = n.notification_id;
+
+    const title = document.createElement("strong");
+    title.textContent = n.title;
+
+    const msg = document.createElement("p");
+    msg.textContent = n.message;
+
+    const time = document.createElement("span");
+    time.className = "notification-time";
+    time.textContent = n.created_at;
+
+    item.appendChild(title);
+    item.appendChild(msg);
+    item.appendChild(time);
+    dropdownEl.appendChild(item);
+  });
 
   dropdownEl.querySelectorAll(".notification-item.unread").forEach((el) => {
     el.addEventListener("click", async () => {

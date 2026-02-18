@@ -78,7 +78,12 @@ ui_telemetry = UiTelemetryStore(
     max_events=settings.ui_telemetry_max_events,
 )
 hub = WebSocketHub(max_connections=settings.ws_max_connections)
-ollama = OllamaClient(settings.ollama_url, settings.ollama_model)
+ollama = OllamaClient(
+    settings.ollama_url,
+    settings.ollama_model,
+    fallback_model=settings.ollama_fallback_model,
+    default_timeout=float(settings.ollama_timeout),
+)
 
 # LLM provider: defaults to Ollama, can be swapped to OpenAI-compatible
 llm: LLMProvider

@@ -68,6 +68,12 @@ def _is_action_intent(message: str) -> bool:
     return bool(words & _ACTION_KEYWORDS)
 
 
+# Browser window title fragments — used to detect when the browser has focus
+# so that "scroll down" targets the previous non-browser window instead.
+_BROWSER_TITLE_FRAGMENTS = (
+    "mozilla firefox", "chrome", "edge", "desktopai live context", "localhost",
+)
+
 # Patterns for direct bridge commands (no vision needed).
 # Each tuple: (compiled regex, action name, param builder).
 _DIRECT_PATTERNS: list[tuple[re.Pattern, str, Callable[[re.Match], dict[str, Any]]]] = [
@@ -75,7 +81,10 @@ _DIRECT_PATTERNS: list[tuple[re.Pattern, str, Callable[[re.Match], dict[str, Any
      "open_application", lambda m: {"application": m.group(1).strip()}),
     (re.compile(r"^(?:focus|switch\s+to|go\s+to)\s+(.+)$", re.I),
      "focus_window", lambda m: {"title": m.group(1).strip()}),
-    (re.compile(r"^scroll\s+(up|down)(?:\s+(\d+))?", re.I),
+    # "scroll down in Notepad" — explicit target window (must come before generic scroll)
+    (re.compile(r"^scroll\s+(up|down)\s+(?:in|on)\s+(.+)$", re.I),
+     "_scroll_in_window", lambda m: {"direction": m.group(1).lower(), "amount": 3, "window": m.group(2).strip()}),
+    (re.compile(r"^scroll\s+(up|down)(?:\s+(\d+))?$", re.I),
      "scroll", lambda m: {"direction": m.group(1).lower(), "amount": int(m.group(2) or 3)}),
     (re.compile(r"^(?:press|send(?:\s+keys?)?)\s+(.+)$", re.I),
      "send_keys", lambda m: {"keys": m.group(1).strip()}),
@@ -127,6 +136,23 @@ async def _cancel_all_runs() -> int:
     return cancelled
 
 
+async def _find_last_non_browser_window() -> Optional[str]:
+    """Return the title of the most recent foreground window that is NOT a browser.
+
+    Searches the last 60 seconds of foreground switches and returns the first
+    (most recent) title that doesn't match any browser title fragment.
+    """
+    switches = await store.recent_switches(since_s=60)
+    for sw in switches:
+        title_lower = (sw.get("title") or "").lower()
+        if not title_lower:
+            continue
+        if any(frag in title_lower for frag in _BROWSER_TITLE_FRAGMENTS):
+            continue
+        return sw["title"]
+    return None
+
+
 async def _try_direct_command(message: str) -> Optional[dict]:
     """Try to match message to a direct bridge command.
 
@@ -150,6 +176,21 @@ async def _try_direct_command(message: str) -> Optional[dict]:
         await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
         await asyncio.sleep(0.4)  # Let window fully receive input focus
         result = await bridge.execute("type_text", {"text": params["text"]}, timeout_s=5)
+    elif action == "_scroll_in_window":
+        # "scroll down in Notepad" — focus the named window, then scroll
+        await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
+        await asyncio.sleep(0.3)
+        result = await bridge.execute(
+            "scroll", {"direction": params["direction"], "amount": params["amount"]}, timeout_s=5,
+        )
+    elif action == "scroll":
+        # Bare "scroll down" — focus last non-browser window first so the
+        # scroll event doesn't land on the browser the user just typed in.
+        target = await _find_last_non_browser_window()
+        if target:
+            await bridge.execute("focus_window", {"title": target}, timeout_s=5)
+            await asyncio.sleep(0.3)
+        result = await bridge.execute(action, params, timeout_s=5)
     else:
         result = await bridge.execute(action, params, timeout_s=5)
 
@@ -394,6 +435,9 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
             response = f"Killed {count} running action(s)." if count > 0 else "No actions were running."
         elif action == "_type_in_window":
             friendly = f"typed in {params.get('window', '')}"
+            response = f"Done — {friendly}."
+        elif action == "_scroll_in_window":
+            friendly = f"scrolled {params.get('direction', 'down')} in {params.get('window', '')}"
             response = f"Done — {friendly}."
         else:
             response = f"Done — {friendly}."

@@ -23,10 +23,19 @@ _CB_OPEN_DURATION_S = 30.0
 
 
 class OllamaClient:
-    def __init__(self, base_url: str, model: str, ttl_seconds: int = 30) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        ttl_seconds: int = 30,
+        fallback_model: str = "",
+        default_timeout: float = 30.0,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.configured_model = str(model or "").strip()
         self.model = self.configured_model
+        self.fallback_model = str(fallback_model or "").strip()
+        self.default_timeout = default_timeout
         self._ttl = ttl_seconds
         self._last_check = 0.0
         self._available: bool = False
@@ -87,7 +96,7 @@ class OllamaClient:
         return status_code >= 500
 
     def diagnostics(self) -> dict:
-        return {
+        result = {
             "available": bool(self._available),
             "last_check_at": self._last_check_at,
             "last_check_source": self._last_check_source,
@@ -99,6 +108,9 @@ class OllamaClient:
             "consecutive_failures": self._consecutive_failures,
             "circuit_open": self._is_circuit_open(),
         }
+        if self.fallback_model:
+            result["fallback_model"] = self.fallback_model
+        return result
 
     def set_active_model(self, model: str) -> str:
         selected = str(model or "").strip()
@@ -360,9 +372,39 @@ class OllamaClient:
     async def summarize(self, prompt: str) -> Optional[str]:
         return await self.generate(prompt)
 
+    async def _try_fallback_generate(self, prompt: str) -> Optional[str]:
+        """Attempt generate with fallback model. Returns None if no fallback configured."""
+        if not self.fallback_model:
+            return None
+        logger.warning(
+            "Falling back to model %s after circuit breaker opened",
+            self.fallback_model,
+        )
+        response_text, status_code, error_detail = await self._generate_once(
+            prompt, self.fallback_model, timeout_s=self.default_timeout,
+        )
+        if error_detail is None:
+            self._record_success()
+            self._record_health(
+                source="generate_fallback_model",
+                available=True,
+                status_code=status_code,
+            )
+            return response_text
+        self._record_health(
+            source="generate_fallback_model",
+            available=False,
+            status_code=status_code,
+            error=error_detail,
+        )
+        return None
+
     async def generate(self, prompt: str) -> Optional[str]:
         if self._is_circuit_open():
             logger.warning("Circuit breaker open — skipping generate")
+            fallback_result = await self._try_fallback_generate(prompt)
+            if fallback_result is not None:
+                return fallback_result
             self._record_health(
                 source="generate", available=False,
                 error="circuit breaker open",
@@ -486,16 +528,53 @@ class OllamaClient:
             "used_fallback": False,
         }
 
+    async def _try_fallback_chat(
+        self,
+        messages: list[dict],
+        timeout_s: float,
+        format: Optional[dict] = None,
+    ) -> Optional[str]:
+        """Attempt chat with fallback model. Returns None if no fallback configured."""
+        if not self.fallback_model:
+            return None
+        logger.warning(
+            "Falling back to model %s after circuit breaker opened",
+            self.fallback_model,
+        )
+        response_text, status_code, error_detail = await self._chat_once(
+            messages, self.fallback_model, timeout_s=timeout_s, format=format,
+        )
+        if error_detail is None:
+            self._record_success()
+            self._record_health(
+                source="chat_fallback_model",
+                available=True,
+                status_code=status_code,
+            )
+            return response_text
+        self._record_health(
+            source="chat_fallback_model",
+            available=False,
+            status_code=status_code,
+            error=error_detail,
+        )
+        return None
+
     async def chat(
         self,
         messages: list[dict],
         *,
         model: Optional[str] = None,
         format: Optional[dict] = None,
-        timeout_s: float = 60.0,
+        timeout_s: float = 30.0,
     ) -> Optional[str]:
         if self._is_circuit_open():
             logger.warning("Circuit breaker open — skipping chat")
+            fallback_result = await self._try_fallback_chat(
+                messages, timeout_s, format=format,
+            )
+            if fallback_result is not None:
+                return fallback_result
             self._record_health(
                 source="chat", available=False,
                 error="circuit breaker open",
@@ -552,7 +631,7 @@ class OllamaClient:
         messages: list[dict],
         *,
         model: Optional[str] = None,
-        timeout_s: float = 60.0,
+        timeout_s: float = 30.0,
     ) -> AsyncIterator[dict]:
         """Async generator yielding streaming tokens from Ollama chat.
 
@@ -561,6 +640,14 @@ class OllamaClient:
         """
         if self._is_circuit_open():
             logger.warning("Circuit breaker open — skipping chat_stream")
+            # Try fallback for streaming: do a non-streaming chat and yield result
+            if self.fallback_model:
+                fallback_result = await self._try_fallback_chat(
+                    messages, timeout_s,
+                )
+                if fallback_result is not None:
+                    yield {"token": fallback_result, "done": True}
+                    return
             yield {"token": "", "done": True, "error": "circuit breaker open"}
             return
 
@@ -624,13 +711,36 @@ class OllamaClient:
         images: list[bytes],
         *,
         model: Optional[str] = None,
-        timeout_s: float = 60.0,
+        timeout_s: float = 30.0,
     ) -> Optional[str]:
         if not messages or not images:
             return None
 
         if self._is_circuit_open():
             logger.warning("Circuit breaker open — skipping chat_with_images")
+            # Fallback for vision: try fallback model with images
+            if self.fallback_model:
+                logger.warning(
+                    "Falling back to model %s after circuit breaker opened",
+                    self.fallback_model,
+                )
+                messages_copy = [msg.copy() for msg in messages]
+                encoded_images = [base64.b64encode(img).decode("utf-8") for img in images]
+                for msg in reversed(messages_copy):
+                    if msg.get("role") == "user":
+                        msg["images"] = encoded_images
+                        break
+                response_text, status_code, error_detail = await self._chat_once(
+                    messages_copy, self.fallback_model, timeout_s=timeout_s,
+                )
+                if error_detail is None:
+                    self._record_success()
+                    self._record_health(
+                        source="chat_vision_fallback_model",
+                        available=True,
+                        status_code=status_code,
+                    )
+                    return response_text
             self._record_health(
                 source="chat_vision", available=False,
                 error="circuit breaker open",

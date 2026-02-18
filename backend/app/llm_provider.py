@@ -35,7 +35,7 @@ class LLMProvider(Protocol):
         images: list[bytes],
         *,
         model: Optional[str] = None,
-        timeout_s: float = 60.0,
+        timeout_s: float = 30.0,
     ) -> Optional[str]: ...
 
     async def generate(self, prompt: str) -> Optional[str]: ...
