@@ -1249,3 +1249,244 @@ def test_recipe_to_plan_steps_empty():
         keywords=[],
     )
     assert recipe_to_plan_steps(recipe) == []
+
+
+# ── Multi-step command (N-12) tests ──────────────────────────────
+
+
+def test_split_multi_command_comma():
+    """Comma-separated commands split correctly."""
+    from app.routes.agent import _split_multi_command
+
+    result = _split_multi_command("open notepad, type hello")
+    assert result is not None
+    assert len(result) == 2
+    assert result[0][0] == "open_application"
+    assert result[1][0] == "type_text"
+
+
+def test_split_multi_command_then():
+    """'then' delimiter splits correctly."""
+    from app.routes.agent import _split_multi_command
+
+    result = _split_multi_command("open notepad then type hello")
+    assert result is not None
+    assert len(result) == 2
+
+
+def test_split_multi_command_and_then():
+    """'and then' delimiter splits correctly."""
+    from app.routes.agent import _split_multi_command
+
+    result = _split_multi_command("open notepad and then type hello")
+    assert result is not None
+    assert len(result) == 2
+
+
+def test_split_multi_command_three_steps():
+    """Three-step chain splits correctly."""
+    from app.routes.agent import _split_multi_command
+
+    result = _split_multi_command("open notepad, type hello world, press ctrl+s")
+    assert result is not None
+    assert len(result) == 3
+    assert result[0][0] == "open_application"
+    assert result[1][0] == "type_text"
+    assert result[2][0] == "send_keys"
+
+
+def test_split_multi_command_unrecognized_returns_none():
+    """If any segment doesn't match a pattern, returns None."""
+    from app.routes.agent import _split_multi_command
+
+    result = _split_multi_command("open notepad, do something weird")
+    assert result is None
+
+
+def test_split_multi_command_single_returns_none():
+    """Single command (no delimiter) returns None."""
+    from app.routes.agent import _split_multi_command
+
+    result = _split_multi_command("open notepad")
+    assert result is None
+
+
+def test_split_multi_command_cancel_not_allowed():
+    """Cancel-all cannot appear in a multi-step chain."""
+    from app.routes.agent import _split_multi_command
+
+    result = _split_multi_command("open notepad, stop")
+    assert result is None
+
+
+@pytest.mark.anyio
+async def test_multi_command_executes_all_steps(client):
+    """Multi-step command executes all steps and returns multi_step result."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={
+                "message": "open notepad, type hello world, press ctrl+s",
+                "allow_actions": True,
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    assert data["source"] == "direct"
+    assert "multi_step" in data
+    assert data["multi_step"]["total"] == 3
+    assert data["multi_step"]["completed"] == 3
+    assert "executed 3 steps" in data["response"].lower()
+
+
+@pytest.mark.anyio
+async def test_multi_command_stops_on_failure(client):
+    """Multi-step stops on first failure."""
+    call_count = 0
+
+    async def failing_exec(action, params, timeout_s=5):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            raise RuntimeError("bridge error")
+        return {"status": "ok"}
+
+    mock_exec = AsyncMock(side_effect=failing_exec)
+    with patch.object(bridge, "_ws", new=MagicMock()), \
+         patch.object(bridge, "execute", mock_exec):
+        resp = await client.post(
+            "/api/chat",
+            json={
+                "message": "open notepad, type hello, press ctrl+s",
+                "allow_actions": True,
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action_triggered"] is True
+    assert data["multi_step"]["total"] == 3
+    assert data["multi_step"]["completed"] < 3
+
+
+@pytest.mark.anyio
+async def test_multi_command_not_triggered_without_allow_actions(client):
+    """Multi-step commands require allow_actions=True."""
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch, \
+         patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={
+                "message": "open notepad, type hello",
+                "allow_actions": False,
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "multi_step" not in data
+
+
+# ── Deep Context Model (N-13) tests ──────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_build_session_context_with_activity(client):
+    """Session context includes activity classification."""
+    from app.routes.agent import _build_session_context
+
+    event = _seed_event()
+    await store.record(event)
+
+    ctx = await _build_session_context()
+    assert ctx is not None
+    assert "Activity:" in ctx
+    # OUTLOOK.EXE → should classify as comms
+    assert "comms" in ctx.lower()
+
+
+@pytest.mark.anyio
+async def test_build_session_context_includes_energy(client):
+    """Session context includes session energy level."""
+    from app.routes.agent import _build_session_context
+
+    event = _seed_event()
+    await store.record(event)
+
+    ctx = await _build_session_context()
+    assert ctx is not None
+    assert "Session energy:" in ctx
+
+
+@pytest.mark.anyio
+async def test_build_session_context_includes_focus_path():
+    """Session context includes recent focus path when events exist."""
+    from app.routes.agent import _build_session_context
+    from app.schemas import WindowEvent
+
+    now = datetime.now(timezone.utc)
+    e1 = WindowEvent(
+        type="foreground", hwnd="0x1", title="Code.exe - VSCode",
+        process_exe="Code.exe", pid=100, timestamp=now, source="test",
+    )
+    e2 = WindowEvent(
+        type="foreground", hwnd="0x2", title="Inbox - Outlook",
+        process_exe="OUTLOOK.EXE", pid=200, timestamp=now, source="test",
+    )
+    await store.record(e1)
+    await store.record(e2)
+
+    ctx = await _build_session_context()
+    assert ctx is not None
+    # Should see both apps in focus path
+    assert "SESSION CONTEXT:" in ctx
+
+
+@pytest.mark.anyio
+async def test_build_session_context_disabled_by_config():
+    """Session context returns None when CONTEXT_ENRICHMENT_ENABLED=false."""
+    from app.routes.agent import _build_session_context
+
+    with patch("app.routes.agent.settings") as mock_settings:
+        mock_settings.context_enrichment_enabled = False
+        ctx = await _build_session_context()
+    assert ctx is None
+
+
+@pytest.mark.anyio
+async def test_build_session_context_empty_session():
+    """Session context handles empty session (no events)."""
+    from app.routes.agent import _build_session_context
+
+    await store.hydrate([], None, False, None)
+    ctx = await _build_session_context()
+    # Should still return something (at least energy level)
+    if ctx is not None:
+        assert "SESSION CONTEXT:" in ctx
+
+
+@pytest.mark.anyio
+async def test_session_context_injected_into_llm_prompt(client):
+    """Session context appears in the LLM system prompt when enrichment is enabled."""
+    event = _seed_event()
+    await store.record(event)
+
+    captured_messages = []
+
+    async def mock_chat(messages, **kwargs):
+        captured_messages.extend(messages)
+        return "Context-aware response."
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=True), \
+         patch.object(ollama, "chat", side_effect=mock_chat):
+        resp = await client.post("/api/chat", json={"message": "what am I working on?"})
+
+    assert resp.status_code == 200
+    system_msgs = [m for m in captured_messages if m.get("role") == "system"]
+    assert len(system_msgs) >= 1
+    system_text = system_msgs[0]["content"]
+    assert "SESSION CONTEXT:" in system_text

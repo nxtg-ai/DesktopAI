@@ -116,6 +116,15 @@ class Settings:
     tts_default_voice: str = _env("TTS_DEFAULT_VOICE", "af_bella")
     tts_default_speed: float = float(_env("TTS_DEFAULT_SPEED", "1.0"))
 
+    context_enrichment_enabled: bool = _env_bool("CONTEXT_ENRICHMENT_ENABLED", True)
+
+    stt_enabled: bool = _env_bool("STT_ENABLED", True)
+    stt_model_size: str = _env("STT_MODEL_SIZE", "base.en")
+    stt_language: str = _env("STT_LANGUAGE", "en")
+    stt_device: str = _env("STT_DEVICE", "cpu")
+    stt_compute_type: str = _env("STT_COMPUTE_TYPE", "int8")
+    stt_model_dir: str = _env("STT_MODEL_DIR", "models/whisper")
+
     vision_mode: str = _env("VISION_MODE", "auto")
     detection_model_path: str = _env(
         "DETECTION_MODEL_PATH", "models/ui-detr/ui-detr-1.onnx"

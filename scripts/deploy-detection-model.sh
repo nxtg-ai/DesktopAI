@@ -31,4 +31,10 @@ cp "$ONNX_FILE" "$WIN_DEST/ui-detr-1.onnx"
 
 SIZE=$(stat -c%s "$WIN_DEST/ui-detr-1.onnx" 2>/dev/null || echo "unknown")
 echo "Deployed: $WIN_DEST/ui-detr-1.onnx ($SIZE bytes)"
+echo ""
+echo "NOTE: The collector also needs onnxruntime.dll next to the binary."
+echo "  Download from: https://github.com/microsoft/onnxruntime/releases"
+echo "  Place at: $WIN_BASE/onnxruntime.dll"
+echo ""
 echo "Collector will load detection model on next observe command."
+echo "Start collector with DETECTION_ENABLED=true (default)."

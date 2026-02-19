@@ -17,6 +17,7 @@ from ..deps import (
     ollama,
     planner,
     runtime_logs,
+    stt_engine,
     tasks,
     tts_engine,
     ui_telemetry,
@@ -95,6 +96,14 @@ async def get_readiness_status() -> dict:
             else "TTS engine unavailable — browser fallback active.",
         },
         {
+            "name": "stt_available",
+            "ok": stt_engine is not None and stt_engine.available,
+            "required": False,
+            "detail": f"STT engine (faster-whisper {settings.stt_model_size}) loaded."
+            if stt_engine is not None and stt_engine.available
+            else "STT engine unavailable — browser fallback active.",
+        },
+        {
             "name": "detection_model_available",
             "ok": os.path.isfile(settings.detection_model_path),
             "required": False,
@@ -138,6 +147,8 @@ async def get_readiness_status() -> dict:
             "bridge_connected": bridge.connected,
             "tts_available": tts_engine is not None and tts_engine.available,
             "tts_engine": "kokoro-82m" if tts_engine is not None and tts_engine.available else "unavailable",
+            "stt_available": stt_engine is not None and stt_engine.available,
+            "stt_engine": f"faster-whisper-{settings.stt_model_size}" if stt_engine is not None and stt_engine.available else "unavailable",
             "detection_model_available": os.path.isfile(settings.detection_model_path),
             "detection_model_path": settings.detection_model_path,
             "vision_mode": settings.vision_mode,

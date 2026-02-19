@@ -16,6 +16,7 @@ from ..deps import (
     autonomy,
     bridge,
     chat_memory,
+    classifier,
     get_personality_mode,
     llm,
     ollama,
@@ -26,7 +27,7 @@ from ..deps import (
     vision_runner,
 )
 from ..recipes import match_recipe_by_keywords, recipe_to_plan_steps
-from ..schemas import AutonomyStartRequest, ChatRequest
+from ..schemas import AutonomyStartRequest, ChatRequest, WindowEvent
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,114 @@ def _match_direct_pattern(message: str) -> Optional[tuple[str, dict[str, Any]]]:
     return None
 
 
+# Multi-step command splitting: "open notepad, type hello, press ctrl+s"
+_MULTI_DELIMITERS = re.compile(
+    r",\s+then\s+|,\s+and\s+then\s+|\s+and\s+then\s+|\s+then\s+|,\s+",
+    re.I,
+)
+
+
+def _split_multi_command(
+    message: str,
+) -> Optional[list[tuple[str, dict[str, Any]]]]:
+    """Split message into multiple direct-bridge commands.
+
+    Returns list of (action, params) tuples if ALL segments match a direct
+    pattern, or None if any segment is unrecognized or there's only one segment.
+    Cancel-all commands cannot appear in a multi-step chain.
+    """
+    segments = _MULTI_DELIMITERS.split(message.strip())
+    segments = [s.strip() for s in segments if s.strip()]
+    if len(segments) < 2:
+        return None
+
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for seg in segments:
+        matched = _match_direct_pattern(seg)
+        if matched is None:
+            return None
+        if matched[0] == "_cancel_all":
+            return None  # cancel-all cannot be in a chain
+        matches.append(matched)
+    return matches
+
+
+async def _execute_direct_action(
+    action: str, params: dict[str, Any],
+) -> Optional[dict]:
+    """Execute a single direct bridge action. Returns result dict or None."""
+    if action == "_type_in_window":
+        focus_result = await bridge.execute(
+            "focus_window", {"title": params["window"]}, timeout_s=5,
+        )
+        logger.info("direct-bridge: focus_window result=%s", focus_result)
+        await asyncio.sleep(0.4)
+        result = await bridge.execute(
+            "type_text", {"text": params["text"]}, timeout_s=5,
+        )
+        logger.info("direct-bridge: type_text result=%s", result)
+    elif action == "_scroll_in_window":
+        await bridge.execute(
+            "focus_window", {"title": params["window"]}, timeout_s=5,
+        )
+        await asyncio.sleep(0.3)
+        result = await bridge.execute(
+            "scroll",
+            {"direction": params["direction"], "amount": params["amount"]},
+            timeout_s=5,
+        )
+    elif action == "scroll":
+        target = await _find_last_non_browser_window()
+        logger.info("direct-bridge: scroll target=%s (non-browser window)", target)
+        if target:
+            await bridge.execute(
+                "focus_window", {"title": target}, timeout_s=5,
+            )
+            await asyncio.sleep(0.3)
+            result = await bridge.execute(action, params, timeout_s=5)
+        else:
+            return {
+                "action": action,
+                "parameters": params,
+                "result": {
+                    "error": "no_target",
+                    "message": (
+                        "No active application window found. "
+                        "Try 'scroll down in Notepad' to specify the target."
+                    ),
+                },
+            }
+    else:
+        result = await bridge.execute(action, params, timeout_s=5)
+
+    return {"action": action, "parameters": params, "result": result}
+
+
+async def _try_multi_command(
+    matches: list[tuple[str, dict[str, Any]]],
+) -> dict:
+    """Execute multiple direct bridge commands sequentially.
+
+    Returns a result dict with steps list. Stops on first failure.
+    """
+    steps: list[dict] = []
+    for i, (action, params) in enumerate(matches):
+        try:
+            result = await _execute_direct_action(action, params)
+            steps.append({"action": action, "parameters": params, "result": result})
+        except Exception as exc:
+            logger.warning("Multi-step %d failed: %s", i, exc)
+            steps.append({
+                "action": action,
+                "parameters": params,
+                "result": {"error": str(exc)},
+            })
+            break
+        if i < len(matches) - 1:
+            await asyncio.sleep(0.3)
+    return {"steps": steps, "total": len(matches), "completed": len(steps)}
+
+
 async def _cancel_all_runs() -> int:
     """Cancel all in-progress autonomy and vision runs. Returns count cancelled."""
     cancelled = 0
@@ -174,39 +283,7 @@ async def _try_direct_command(message: str) -> Optional[dict]:
         logger.info("direct-bridge: bridge not connected, falling through")
         return None
 
-    if action == "_type_in_window":
-        focus_result = await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
-        logger.info("direct-bridge: focus_window result=%s", focus_result)
-        await asyncio.sleep(0.4)  # Let window fully receive input focus
-        result = await bridge.execute("type_text", {"text": params["text"]}, timeout_s=5)
-        logger.info("direct-bridge: type_text result=%s", result)
-    elif action == "_scroll_in_window":
-        # "scroll down in Notepad" — focus the named window, then scroll
-        await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
-        await asyncio.sleep(0.3)
-        result = await bridge.execute(
-            "scroll", {"direction": params["direction"], "amount": params["amount"]}, timeout_s=5,
-        )
-    elif action == "scroll":
-        # Bare "scroll down" — focus last non-browser window first so the
-        # scroll event doesn't land on the browser the user just typed in.
-        target = await _find_last_non_browser_window()
-        logger.info("direct-bridge: scroll target=%s (non-browser window)", target)
-        if target:
-            await bridge.execute("focus_window", {"title": target}, timeout_s=5)
-            await asyncio.sleep(0.3)
-            result = await bridge.execute(action, params, timeout_s=5)
-        else:
-            # No non-browser window found — don't scroll the browser
-            return {
-                "action": action,
-                "parameters": params,
-                "result": {"error": "no_target", "message": "No active application window found. Try 'scroll down in Notepad' to specify the target."},
-            }
-    else:
-        result = await bridge.execute(action, params, timeout_s=5)
-
-    return {"action": action, "parameters": params, "result": result}
+    return await _execute_direct_action(action, params)
 
 
 _GREETING_WORDS = {"hello", "hi", "hey", "sup", "yo", "howdy", "hola", "greetings"}
@@ -222,6 +299,61 @@ def _is_greeting(message: str) -> bool:
     """Check if message is a simple greeting (no action intent)."""
     words = message.lower().strip().rstrip("!?.").split()
     return len(words) <= 3 and bool(set(words) & _GREETING_WORDS)
+
+
+async def _build_session_context() -> Optional[str]:
+    """Assemble session context for LLM prompt enrichment.
+
+    Returns a multi-line string describing the user's current session,
+    or None if context enrichment is disabled or no data available.
+    """
+    if not settings.context_enrichment_enabled:
+        return None
+
+    parts: list[str] = []
+
+    # Activity category from classifier
+    current_event = await store.current()
+    if current_event:
+        event = WindowEvent.model_validate(current_event) if isinstance(current_event, dict) else current_event
+        classification = await classifier.classify(event)
+        parts.append(f"Activity: {classification.category}")
+
+    # Session energy level
+    session = await store.session_summary()
+    energy = personality_adapter.classify_energy(session)
+    parts.append(f"Session energy: {energy}")
+
+    # Session duration
+    duration_s = session.get("session_duration_s", 0)
+    if duration_s > 0:
+        parts.append(f"Session duration: {round(duration_s / 60, 1)} min")
+
+    # Primary focus app
+    top_apps = session.get("top_apps", [])
+    if top_apps:
+        primary = top_apps[0]
+        parts.append(f"Primary focus: {primary['process']} ({primary['dwell_s']}s)")
+
+    # Recent focus path (last 5 unique apps)
+    switches = await store.recent_switches(since_s=300)
+    if switches:
+        seen: set[str] = set()
+        focus_path: list[str] = []
+        for sw in switches:
+            app = sw.get("process_exe", "")
+            if app and app not in seen:
+                seen.add(app)
+                focus_path.append(app)
+            if len(focus_path) >= 5:
+                break
+        if focus_path:
+            parts.append(f"Recent focus path: {' → '.join(focus_path)}")
+
+    if not parts:
+        return None
+
+    return "SESSION CONTEXT: " + " | ".join(parts)
 
 
 def _build_context_response(ctx) -> str:
@@ -365,11 +497,21 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
         except Exception as exc:
             logger.warning("Recipe execution failed: %s", exc)
 
+    # Fast path: multi-step command chain (e.g. "open notepad, type hello, press ctrl+s")
+    multi_result = None
+    multi_matches = _split_multi_command(message) if request.allow_actions else None
+    if not action_triggered and multi_matches and bridge.connected:
+        action_triggered = True
+        try:
+            multi_result = await _try_multi_command(multi_matches)
+        except Exception as exc:
+            logger.warning("Multi-step command failed: %s", exc)
+
     # Fast path: direct bridge command for simple actions (no VLM needed).
     # Pattern match gates action_triggered — prevents VisionAgent from also
     # firing on the same command even if bridge execution fails or is offline.
     direct_result = None
-    direct_match = _match_direct_pattern(message) if request.allow_actions else None
+    direct_match = _match_direct_pattern(message) if (request.allow_actions and not action_triggered) else None
     if not action_triggered and direct_match:
         action_triggered = True
         # _cancel_all works without bridge; other commands need it
@@ -432,6 +574,29 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
             result["screenshot_b64"] = screenshot_b64
         return result
 
+    # Multi-step commands: return summary of all steps
+    if multi_result:
+        completed = multi_result["completed"]
+        total = multi_result["total"]
+        if completed == total:
+            response = f"Done — executed {completed} steps."
+        else:
+            response = f"Completed {completed}/{total} steps (stopped on failure)."
+        await chat_memory.save_message(conversation_id, "assistant", response)
+        result = {
+            "response": response,
+            "source": "direct",
+            "desktop_context": ctx_dict,
+            "action_triggered": True,
+            "run_id": None,
+            "conversation_id": conversation_id,
+            "personality_mode": mode,
+            "multi_step": multi_result,
+        }
+        if screenshot_b64:
+            result["screenshot_b64"] = screenshot_b64
+        return result
+
     # Direct commands: return immediately — no LLM call needed
     if direct_result or direct_match:
         if direct_result:
@@ -472,12 +637,14 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
     is_available = await llm.available()
     if is_available:
         fg_switches = await store.recent_switches(since_s=120)
+        session_context = await _build_session_context()
         llm_messages = _build_llm_messages(
             mode=mode, ctx=ctx, message=message,
             action_triggered=action_triggered, run_id=run_id,
             session=session, history=history,
             recent_events=(await store.snapshot())[1],
             recent_switches=fg_switches,
+            session_context=session_context,
         )
 
         # SSE streaming branch
@@ -552,6 +719,7 @@ def _build_llm_messages(
     history: list,
     recent_events: list,
     recent_switches: Optional[list] = None,
+    session_context: Optional[str] = None,
 ) -> list[dict]:
     """Build the multi-turn messages array for the LLM call."""
     llm_messages: list[dict] = []
@@ -602,6 +770,8 @@ def _build_llm_messages(
             f"session {round(session.get('session_duration_s', 0) / 60, 1)} min. "
             f"Top: {top}"
         )
+    if session_context:
+        system_parts.append(f"\n{session_context}")
     if action_triggered and run_id:
         system_parts.append(
             f"\nAn autonomous agent is now working on: {message}. "

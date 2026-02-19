@@ -1307,4 +1307,27 @@ mod tests {
         // (no events injected) but that's fine.
         simulate_alt_key();
     }
+
+    #[test]
+    fn test_command_result_with_detections() {
+        let mut cr = CommandResult::success("det-1", HashMap::new());
+        cr.detections = Some(serde_json::json!([
+            {"x": 10, "y": 20, "w": 100, "h": 30, "score": 0.95},
+            {"x": 200, "y": 300, "w": 50, "h": 25, "score": 0.8},
+        ]));
+        let json = serde_json::to_value(&cr).unwrap();
+        let dets = json.get("detections").expect("detections should be present");
+        assert!(dets.is_array());
+        assert_eq!(dets.as_array().unwrap().len(), 2);
+        assert_eq!(dets[0]["score"], 0.95);
+    }
+
+    #[test]
+    fn test_command_result_no_detections_omitted() {
+        let cr = CommandResult::success("det-2", HashMap::new());
+        assert!(cr.detections.is_none());
+        let json = serde_json::to_value(&cr).unwrap();
+        // skip_serializing_if = "Option::is_none" should omit the field entirely
+        assert!(json.get("detections").is_none(), "detections should be omitted when None");
+    }
 }

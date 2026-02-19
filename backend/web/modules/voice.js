@@ -139,6 +139,87 @@ export async function ensureMicrophone() {
   }
 }
 
+// ── Server-side STT (faster-whisper) ────────────────────────────
+let _serverSttAvailable = null;
+
+export async function checkServerStt() {
+  try {
+    const resp = await fetch("/api/stt/status");
+    if (resp.ok) {
+      const data = await resp.json();
+      _serverSttAvailable = data.available === true;
+    } else {
+      _serverSttAvailable = false;
+    }
+  } catch {
+    _serverSttAvailable = false;
+  }
+  return _serverSttAvailable;
+}
+
+export async function startServerRecording() {
+  if (!appState.mediaStream) {
+    const ok = await ensureMicrophone();
+    if (!ok) return null;
+  }
+  const recorder = new MediaRecorder(appState.mediaStream, { mimeType: "audio/webm" });
+  const chunks = [];
+  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+  appState._serverRecorder = recorder;
+  appState._serverChunks = chunks;
+  recorder.start();
+  appState.recognitionActive = true;
+  micBtn.textContent = "Stop Listening";
+  setVoiceState("listening (server)", "good");
+  sttStatusEl.textContent = "Mic: recording for server STT";
+  queueTelemetry("stt_server_recording", "server STT recording started");
+  return recorder;
+}
+
+export async function stopServerRecording() {
+  const recorder = appState._serverRecorder;
+  const chunks = appState._serverChunks;
+  if (!recorder || recorder.state !== "recording") return null;
+  return new Promise((resolve) => {
+    recorder.onstop = async () => {
+      appState.recognitionActive = false;
+      micBtn.textContent = "Start Listening";
+      setVoiceState("transcribing…", "neutral");
+      sttStatusEl.textContent = "Mic: transcribing…";
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      const form = new FormData();
+      form.append("file", blob, "recording.webm");
+      try {
+        const resp = await fetch("/api/stt", { method: "POST", body: form });
+        if (resp.ok) {
+          const data = await resp.json();
+          const text = data.text || "";
+          if (text) {
+            appState.recognitionTranscript = `${appState.recognitionTranscript} ${text}`.trim();
+            voiceTextEl.value = appState.recognitionTranscript;
+            avatar.bump();
+          }
+          setVoiceState("standby", "neutral");
+          sttStatusEl.textContent = "Mic: standby";
+          queueTelemetry("stt_server_result", "server STT completed", { text_length: text.length });
+          resolve(text);
+        } else {
+          setVoiceState("stt error", "warn");
+          sttStatusEl.textContent = "Mic: server STT failed";
+          queueTelemetry("stt_server_error", "server STT request failed");
+          resolve(null);
+        }
+      } catch (err) {
+        setVoiceState("stt error", "warn");
+        sttStatusEl.textContent = `Mic: ${err.message || "error"}`;
+        queueTelemetry("stt_server_error", "server STT network error", { error: String(err) });
+        resolve(null);
+      }
+    };
+    recorder.stop();
+  });
+}
+
 export async function setupSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   appState.recognitionSupported = Boolean(SpeechRecognition);

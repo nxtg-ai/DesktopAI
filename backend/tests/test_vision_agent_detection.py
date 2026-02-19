@@ -379,6 +379,57 @@ class TestReasonDetectionDynamicDimensions:
             assert kwargs["image_height"] == 1080
 
 
+class TestEndToEndDetectionPipeline:
+    """N-03 UAT: Full pipeline — bridge observe with detections → VisionAgent → merged → action."""
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline_detection_to_action(self):
+        """Simulates complete: bridge returns detections + UIA → VisionAgent reasons → click action."""
+        agent, bridge_mock, ollama = _make_agent(vision_mode="auto")
+
+        # Bridge returns observe with detections + UIA
+        bridge_mock.execute = AsyncMock(return_value={
+            "screenshot_b64": "ZmFrZQ==",
+            "uia": {
+                "window_tree": [
+                    {"name": "File", "control_type": "MenuItem", "bounding_rect": [48, 5, 62, 25]},
+                    {"name": "Edit", "control_type": "MenuItem", "bounding_rect": [115, 5, 55, 25]},
+                ]
+            },
+            "result": {
+                "window_title": "Notepad",
+                "process_exe": "notepad.exe",
+                "screenshot_width": 1024,
+                "screenshot_height": 768,
+            },
+            "detections": [
+                {"x": 0.047, "y": 0.006, "width": 0.061, "height": 0.033, "confidence": 0.92},
+                {"x": 0.112, "y": 0.006, "width": 0.054, "height": 0.033, "confidence": 0.88},
+            ],
+        })
+
+        # LLM returns a click action targeting element 0 (File)
+        ollama.chat = AsyncMock(return_value=json.dumps({
+            "action": "click",
+            "parameters": {"element_id": 0},
+            "reasoning": "Clicking File menu as requested",
+            "confidence": 0.9,
+        }))
+
+        # Run observe
+        obs = await agent._observe()
+        assert obs.detections is not None
+        assert len(obs.detections) == 2
+        assert obs.uia_elements is not None
+        assert len(obs.uia_elements) == 2
+
+        # Run reason — should use detection path (auto mode + detections present)
+        action = await agent._reason("Click the File menu", obs, [])
+        assert action.action == "click"
+        # element_id should be resolved to UIA name "File"
+        assert action.parameters.get("name") == "File" or "x" in action.parameters
+
+
 class TestBuildHistorySection:
     def test_empty_history(self):
         assert VisionAgent._build_history_section([]) == ""
