@@ -421,7 +421,7 @@ async def test_direct_type_in_window(client):
 
 @pytest.mark.anyio
 async def test_direct_scroll_no_recent_windows(client):
-    """'scroll down' with no recent foreground windows just scrolls normally."""
+    """'scroll down' with no recent foreground windows returns helpful error."""
     ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
     with ws_patch, exec_patch:
         resp = await client.post(
@@ -433,10 +433,10 @@ async def test_direct_scroll_no_recent_windows(client):
     data = resp.json()
     assert data["action_triggered"] is True
     assert data["source"] == "direct"
-    # No recent windows → only scroll call, no focus_window
-    mock_exec.assert_called_once_with(
-        "scroll", {"direction": "down", "amount": 3}, timeout_s=5,
-    )
+    # No recent windows → don't scroll the browser, return helpful message
+    mock_exec.assert_not_called()
+    assert "no active application" in data["response"].lower()
+    assert "scroll down in" in data["response"].lower()
 
 
 @pytest.mark.anyio
@@ -758,10 +758,9 @@ async def test_scroll_skips_all_browser_windows(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["source"] == "direct"
-    # No non-browser window found → only scroll call
-    mock_exec.assert_called_once_with(
-        "scroll", {"direction": "down", "amount": 3}, timeout_s=5,
-    )
+    # All browsers → don't scroll the browser, return helpful message
+    mock_exec.assert_not_called()
+    assert "no active application" in data["response"].lower()
 
 
 def test_scroll_in_window_pattern_matches():

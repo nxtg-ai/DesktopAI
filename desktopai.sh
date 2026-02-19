@@ -5,6 +5,14 @@ set -e
 
 cd "$(dirname "$0")"
 
+# Source .env for model config (skip lines with spaces/special chars)
+if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . .env
+    set +a
+fi
+
 PIDFILE=".desktopai.pid"
 LOGFILE="desktopai.log"
 HOST="${DESKTOPAI_HOST:-0.0.0.0}"
@@ -24,12 +32,21 @@ _check_ollama() {
 }
 
 _check_models() {
+    # Read model names from .env, fall back to defaults
+    TEXT_MODEL="${OLLAMA_MODEL:-qwen2.5:7b}"
+    VISION_MODEL="${OLLAMA_VISION_MODEL:-qwen2.5vl:7b}"
+    FALLBACK_MODEL="${OLLAMA_FALLBACK_MODEL:-}"
+
     MODELS=$(curl -s http://localhost:11434/api/tags 2>/dev/null | python3 -c "import sys,json; print(' '.join(m['name'] for m in json.load(sys.stdin).get('models',[])))" 2>/dev/null || echo "")
-    if [[ "$MODELS" != *"qwen2.5vl"* ]]; then
-        echo "Pulling qwen2.5vl:7b (this may take a while first time)..."
-        ollama pull qwen2.5vl:7b
-    fi
-    echo "Model ready: qwen2.5vl:7b"
+
+    for MODEL in "$TEXT_MODEL" "$VISION_MODEL" $FALLBACK_MODEL; do
+        [ -z "$MODEL" ] && continue
+        if [[ "$MODELS" != *"$MODEL"* ]]; then
+            echo "Pulling $MODEL (this may take a while first time)..."
+            ollama pull "$MODEL"
+        fi
+    done
+    echo "Models ready: text=$TEXT_MODEL vision=$VISION_MODEL${FALLBACK_MODEL:+ fallback=$FALLBACK_MODEL}"
 }
 
 _is_running() {

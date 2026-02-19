@@ -461,7 +461,8 @@ fn try_set_value(automation_id: &str, text: &str) -> Option<bool> {
 fn send_text_via_input(text: &str) {
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
-    for ch in text.encode_utf16() {
+    let chars: Vec<u16> = text.encode_utf16().collect();
+    for (i, &ch) in chars.iter().enumerate() {
         let inputs = [
             INPUT {
                 r#type: INPUT_KEYBOARD,
@@ -489,6 +490,11 @@ fn send_text_via_input(text: &str) {
             },
         ];
         unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32); }
+        // Small delay between characters so target apps can process each keystroke.
+        // Without this, rapid-fire SendInput can overwhelm WinUI 3 apps (e.g. Win11 Notepad).
+        if i + 1 < chars.len() {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
     }
 }
 
@@ -819,6 +825,8 @@ fn handle_focus_window(cmd: &Command, _config: &Config) -> CommandResult {
 #[cfg(windows)]
 fn handle_scroll(cmd: &Command, config: &Config) -> CommandResult {
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    use windows::Win32::Foundation::RECT;
 
     let direction = cmd.parameters.get("direction").and_then(|v| v.as_str()).unwrap_or("down");
     let amount = cmd.parameters.get("amount").and_then(|v| v.as_i64()).unwrap_or(3) as i32;
@@ -829,6 +837,40 @@ fn handle_scroll(cmd: &Command, config: &Config) -> CommandResult {
         "down" => -120 * amount,
         _ => return CommandResult::failure(&cmd.command_id, &format!("unknown scroll direction: {direction}")),
     };
+
+    // Move cursor to the center of the foreground window first.
+    // MOUSEEVENTF_WHEEL delivers to the window under the cursor, NOT the
+    // focused window, so we must position the cursor over the target.
+    let fg = unsafe { GetForegroundWindow() };
+    if fg.0 != 0 {
+        let mut rect = RECT::default();
+        if unsafe { GetWindowRect(fg, &mut rect) }.is_ok() {
+            let cx = (rect.left + rect.right) / 2;
+            let cy = (rect.top + rect.bottom) / 2;
+            // Convert to absolute coordinates (0..65535 range)
+            let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+            let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+            if screen_w > 0 && screen_h > 0 {
+                let abs_x = (cx as i64 * 65536 / screen_w as i64) as i32;
+                let abs_y = (cy as i64 * 65536 / screen_h as i64) as i32;
+                let move_input = INPUT {
+                    r#type: INPUT_MOUSE,
+                    Anonymous: INPUT_0 {
+                        mi: MOUSEINPUT {
+                            dx: abs_x,
+                            dy: abs_y,
+                            mouseData: 0,
+                            dwFlags: MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE,
+                            time: 0,
+                            dwExtraInfo: 0,
+                        },
+                    },
+                };
+                unsafe { SendInput(&[move_input], std::mem::size_of::<INPUT>() as i32); }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
 
     let input = INPUT {
         r#type: INPUT_MOUSE,

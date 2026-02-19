@@ -71,7 +71,7 @@ def _is_action_intent(message: str) -> bool:
 # Browser window title fragments — used to detect when the browser has focus
 # so that "scroll down" targets the previous non-browser window instead.
 _BROWSER_TITLE_FRAGMENTS = (
-    "mozilla firefox", "chrome", "edge", "desktopai live context", "localhost",
+    "mozilla firefox", "chrome", "edge", "desktopai live context", "desktopai", "localhost",
 )
 
 # Patterns for direct bridge commands (no vision needed).
@@ -163,6 +163,7 @@ async def _try_direct_command(message: str) -> Optional[dict]:
         return None
 
     action, params = matched
+    logger.info("direct-bridge matched action=%s params=%s", action, params)
 
     # Cancel-all doesn't need the bridge
     if action == "_cancel_all":
@@ -170,12 +171,15 @@ async def _try_direct_command(message: str) -> Optional[dict]:
         return {"action": action, "parameters": params, "result": {"cancelled": cancelled}}
 
     if not bridge.connected:
+        logger.info("direct-bridge: bridge not connected, falling through")
         return None
 
     if action == "_type_in_window":
-        await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
+        focus_result = await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
+        logger.info("direct-bridge: focus_window result=%s", focus_result)
         await asyncio.sleep(0.4)  # Let window fully receive input focus
         result = await bridge.execute("type_text", {"text": params["text"]}, timeout_s=5)
+        logger.info("direct-bridge: type_text result=%s", result)
     elif action == "_scroll_in_window":
         # "scroll down in Notepad" — focus the named window, then scroll
         await bridge.execute("focus_window", {"title": params["window"]}, timeout_s=5)
@@ -187,10 +191,18 @@ async def _try_direct_command(message: str) -> Optional[dict]:
         # Bare "scroll down" — focus last non-browser window first so the
         # scroll event doesn't land on the browser the user just typed in.
         target = await _find_last_non_browser_window()
+        logger.info("direct-bridge: scroll target=%s (non-browser window)", target)
         if target:
             await bridge.execute("focus_window", {"title": target}, timeout_s=5)
             await asyncio.sleep(0.3)
-        result = await bridge.execute(action, params, timeout_s=5)
+            result = await bridge.execute(action, params, timeout_s=5)
+        else:
+            # No non-browser window found — don't scroll the browser
+            return {
+                "action": action,
+                "parameters": params,
+                "result": {"error": "no_target", "message": "No active application window found. Try 'scroll down in Notepad' to specify the target."},
+            }
     else:
         result = await bridge.execute(action, params, timeout_s=5)
 
@@ -439,6 +451,8 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
         elif action == "_scroll_in_window":
             friendly = f"scrolled {params.get('direction', 'down')} in {params.get('window', '')}"
             response = f"Done — {friendly}."
+        elif direct_result and isinstance(direct_result.get("result"), dict) and direct_result["result"].get("error") == "no_target":
+            response = direct_result["result"]["message"]
         else:
             response = f"Done — {friendly}."
         await chat_memory.save_message(conversation_id, "assistant", response)
