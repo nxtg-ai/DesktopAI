@@ -119,13 +119,31 @@ async def _broadcast_collector_disconnect() -> None:
         logger.debug("Disconnect broadcast failed: %s", exc)
 
 
-async def _heartbeat_sender(ws: WebSocket, interval_s: int) -> None:
+async def _heartbeat_sender(ws: WebSocket, interval_s: float) -> None:
     """Send periodic JSON pings to the collector to detect stale connections."""
     while True:
         await asyncio.sleep(interval_s)
         try:
             await ws.send_json({"type": "ping"})
         except Exception:
+            break
+
+
+async def _pong_watchdog(
+    ws: WebSocket, last_pong: list[float], timeout_s: float
+) -> None:
+    """Force-close WS if no pong received within timeout."""
+    while True:
+        await asyncio.sleep(timeout_s)
+        elapsed = asyncio.get_event_loop().time() - last_pong[0]
+        if elapsed > timeout_s:
+            logger.warning(
+                "Collector pong timeout (%.1fs), closing dead WS", elapsed
+            )
+            try:
+                await ws.close(code=1001, reason="pong timeout")
+            except Exception:
+                pass
             break
 
 
@@ -136,8 +154,13 @@ async def ingest_ws(ws: WebSocket) -> None:
     await collector_status.note_ws_connected(datetime.now(timezone.utc))
     bridge.attach(ws)
     await _broadcast_collector_greeting()
+    last_pong: list[float] = [asyncio.get_event_loop().time()]
+    pong_timeout_s = settings.collector_heartbeat_interval_s * 2.5
     heartbeat_task = asyncio.create_task(
         _heartbeat_sender(ws, settings.collector_heartbeat_interval_s)
+    )
+    watchdog_task = asyncio.create_task(
+        _pong_watchdog(ws, last_pong, pong_timeout_s)
     )
     try:
         while True:
@@ -147,20 +170,23 @@ async def ingest_ws(ws: WebSocket) -> None:
                 bridge.handle_result(data)
                 continue
             if msg_type == "pong":
+                last_pong[0] = asyncio.get_event_loop().time()
                 await collector_status.note_heartbeat(datetime.now(timezone.utc))
                 continue
             event = _parse_event(data)
             await _handle_event(event, transport="ws")
             await ws.send_json({"status": "ok"})
     except WebSocketDisconnect:
-        bridge.detach()
+        bridge.detach(ws)
         heartbeat_task.cancel()
+        watchdog_task.cancel()
         await _broadcast_collector_disconnect()
         await collector_status.note_ws_disconnected(datetime.now(timezone.utc))
         logger.info("Collector WS disconnected")
     except Exception as exc:
-        bridge.detach()
+        bridge.detach(ws)
         heartbeat_task.cancel()
+        watchdog_task.cancel()
         await _broadcast_collector_disconnect()
         await collector_status.note_ws_disconnected(datetime.now(timezone.utc))
         logger.exception("Collector WS error: %s", exc)

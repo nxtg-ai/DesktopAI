@@ -28,7 +28,10 @@ class CommandBridge:
         self._ws = ws
         logger.info("CommandBridge: collector attached")
 
-    def detach(self) -> None:
+    def detach(self, ws: Optional[WebSocket] = None) -> None:
+        if ws is not None and self._ws is not ws:
+            logger.info("CommandBridge: stale detach ignored (ws mismatch)")
+            return
         self._ws = None
         # Cancel all pending futures
         for fut in self._pending.values():

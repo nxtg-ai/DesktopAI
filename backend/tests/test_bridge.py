@@ -98,3 +98,25 @@ async def test_send_failure_raises(bridge):
 
     with pytest.raises(RuntimeError, match="failed to send"):
         await bridge.execute("observe")
+
+
+@pytest.mark.asyncio
+async def test_stale_detach_ignored(bridge):
+    """Detaching an old WS after a new one has attached should be a no-op."""
+    ws1 = AsyncMock()
+    ws2 = AsyncMock()
+    bridge.attach(ws1)
+    bridge.attach(ws2)  # simulate reconnect
+
+    bridge.detach(ws1)  # stale detach — should be ignored
+    assert bridge.connected  # ws2 still live
+
+
+@pytest.mark.asyncio
+async def test_matching_detach_works(bridge):
+    """Detaching the current WS should disconnect the bridge."""
+    ws1 = AsyncMock()
+    bridge.attach(ws1)
+
+    bridge.detach(ws1)
+    assert not bridge.connected

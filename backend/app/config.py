@@ -108,7 +108,7 @@ class Settings:
     notification_idle_threshold_s: int = _env_int("NOTIFICATION_IDLE_THRESHOLD_S", 300)
     notification_max_count: int = _env_int("NOTIFICATION_MAX_COUNT", 200)
     ws_max_connections: int = _env_int("WS_MAX_CONNECTIONS", 50)
-    collector_heartbeat_interval_s: int = _env_int("COLLECTOR_HEARTBEAT_INTERVAL_S", 30)
+    collector_heartbeat_interval_s: int = _env_int("COLLECTOR_HEARTBEAT_INTERVAL_S", 10)
 
     tts_enabled: bool = _env_bool("TTS_ENABLED", True)
     tts_model_path: str = _env("TTS_MODEL_PATH", "models/kokoro/kokoro-v1.0.onnx")
