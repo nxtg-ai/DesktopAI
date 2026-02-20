@@ -224,6 +224,13 @@ Direct bridge patterns (no vision/LLM needed):
 - **Kill Switch WS Broadcast (N-10)**: `kill_confirmed` event broadcast via WebSocket hub on cancel-all, `POST /api/kill` convenience endpoint, browser UI kill flash.
 - **Voice-to-Command Pipeline**: Auto-submit transcribed voice to chat, `input_source` telemetry field, mic button in palette, `Ctrl+M` shortcut.
 
+## What's Shipped (Sprint 11)
+- **Palette Voice (N-06)**: Mic button in Tauri command palette — MediaRecorder → `/api/stt` → auto-submit → `/api/tts` playback. Recording/processing CSS states, codec negotiation fallback, dismiss/visibility cleanup.
+- **Chat Inline Mic (N-06)**: Mic button in web UI chat input bar — server-side STT via `startServerRecording()`/`stopServerRecording()`, dispatches `voice-command` event for auto-submit.
+- **Auto-Speak Toggle**: Opt-in checkbox below chat bar, localStorage-persisted (`desktopai-autospeak`). Calls `speakText()` after both SSE streaming and JSON responses.
+- **Reusable `.btn-icon` CSS**: 38px circle icon button utility with dark mode support.
+- 100% frontend sprint — zero Python changes, 724 backend tests unaffected.
+
 ## What's Next (see BACKLOG.md)
 - 3D Blender avatar with WebGL/WebGPU renderer
 - Wake word ("Hey Desktop") via Picovoice Porcupine
