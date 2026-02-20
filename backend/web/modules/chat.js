@@ -5,6 +5,12 @@ import {
   chatInputEl, chatSendBtn, personalityModeEl, personalityEnergyBadgeEl, formatTime,
 } from "./state.js";
 import { queueTelemetry } from "./telemetry.js";
+import { speakText } from "./voice.js";
+
+function _shouldAutoSpeak() {
+  const el = document.getElementById("chat-autospeak-toggle");
+  return el ? el.checked : false;
+}
 
 function appendChatMessage(role, text, meta = {}) {
   if (chatWelcomeEl) chatWelcomeEl.style.display = "none";
@@ -252,6 +258,7 @@ export async function sendChatMessage(text, opts = {}) {
       }
       // Add badges from final metadata
       finalizeStreamingMessage(msgEl, finalMeta);
+      if (_shouldAutoSpeak() && bubble.textContent) speakText(bubble.textContent);
       if (finalMeta.conversation_id) {
         appState.conversationId = finalMeta.conversation_id;
         const titleEl = document.getElementById("chat-conversation-title");
@@ -289,6 +296,7 @@ export async function sendChatMessage(text, opts = {}) {
       }
     }
     appendChatMessage("agent", data.response, { source: data.source, action_triggered: data.action_triggered, run_id: data.run_id, personality_mode: data.personality_mode });
+    if (_shouldAutoSpeak() && data.response) speakText(data.response);
     chatStatusEl.textContent = "ready";
     chatStatusEl.dataset.tone = "good";
     if (data.desktop_context) updateChatContextBar(data.desktop_context);

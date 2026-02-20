@@ -91,6 +91,55 @@ html, body {
   color: var(--text-muted);
 }
 
+/* ── Mic Button ── */
+.palette-mic-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.palette-mic-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.palette-mic-btn.recording {
+  color: #ff5c5c;
+  border-color: rgba(255, 92, 92, 0.5);
+  background: rgba(255, 92, 92, 0.1);
+  animation: palette-mic-pulse 1.5s ease-in-out infinite;
+}
+
+.palette-mic-btn.processing {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+#palette.loading .palette-mic-btn {
+  display: none;
+}
+
+@keyframes palette-mic-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 92, 92, 0.15);
+  }
+}
+
 /* ── Response area ── */
 #palette-response {
   margin-top: 4px;

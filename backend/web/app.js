@@ -12,6 +12,7 @@ import {
   autonomyStartBtn, autonomyApproveBtn, autonomyCancelBtn,
   readinessGateBtn, readinessMatrixBtn,
   chatSendBtn, chatInputEl, chatSuggestionBtns, personalityModeEl,
+  chatMicBtnEl, chatAutoSpeakEl,
   visionRefreshBtn,
   journeySessionEl, journeyRefreshBtn,
   runtimeLogsRefreshBtn, runtimeLogsCorrelateBtn, runtimeLogsClearBtn,
@@ -41,6 +42,7 @@ import {
 
 import {
   setVoiceState, speakText, stopMeterLoop, ensureMicrophone, setupSpeechRecognition,
+  startServerRecording, stopServerRecording,
 } from "./modules/voice.js";
 
 import { sendChatMessage, startNewChat, refreshRecipeSuggestions, fetchPersonalityStatus } from "./modules/chat.js";
@@ -64,6 +66,33 @@ chatSuggestionBtns.forEach((btn) => {
     void sendChatMessage(msg);
   });
 });
+
+// Chat mic button (server-side STT)
+if (chatMicBtnEl) {
+  chatMicBtnEl.addEventListener("click", async () => {
+    if (appState.recognitionActive) {
+      chatMicBtnEl.classList.replace("recording", "processing");
+      chatInputEl.disabled = false;
+      chatInputEl.placeholder = "Ask something or give a command\u2026";
+      await stopServerRecording();  // dispatches voice-command event → chat.js
+      chatMicBtnEl.classList.remove("processing");
+    } else {
+      const recorder = await startServerRecording();
+      if (recorder) {
+        chatMicBtnEl.classList.add("recording");
+        chatInputEl.placeholder = "Listening\u2026 (click mic to stop)";
+      }
+    }
+  });
+}
+
+// Auto-speak toggle persistence
+if (chatAutoSpeakEl) {
+  try { chatAutoSpeakEl.checked = localStorage.getItem("desktopai-autospeak") === "true"; } catch {}
+  chatAutoSpeakEl.addEventListener("change", () => {
+    try { localStorage.setItem("desktopai-autospeak", String(chatAutoSpeakEl.checked)); } catch {}
+  });
+}
 
 // Agent Vision
 visionRefreshBtn.addEventListener("click", () => void refreshAgentVision());

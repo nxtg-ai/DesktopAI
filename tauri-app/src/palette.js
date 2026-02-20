@@ -13,12 +13,17 @@ const responseText = document.getElementById("response-text");
 
 let conversationId = null;
 
+// ── Mic state ──
+const micBtn = document.getElementById("palette-mic-btn");
+let micStream = null, micRecorder = null, micChunks = [], micRecording = false;
+
 // Auto-focus and reset when the window becomes visible
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     input.value = "";
     responseEl.classList.add("hidden");
     palette.classList.remove("loading");
+    if (micRecording) stopPaletteMic();
     input.focus();
     resizeForResponse(false);
   }
@@ -106,6 +111,7 @@ async function sendCommand(message) {
           conversation_id: conversationId,
         });
       }
+      speakPaletteResponse(responseText.textContent);
       return;
     }
 
@@ -136,6 +142,7 @@ async function sendCommand(message) {
 
     // LLM or async agent responses
     showResponse(reply);
+    speakPaletteResponse(reply);
 
     // Auto-dismiss after showing for action triggers
     if (data.action_triggered) {
@@ -148,6 +155,98 @@ async function sendCommand(message) {
   }
 }
 
+// ── Mic functions ──
+
+async function startPaletteMic() {
+  try {
+    if (!micStream) {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+    micChunks = [];
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+    micRecorder = mimeType
+      ? new MediaRecorder(micStream, { mimeType })
+      : new MediaRecorder(micStream);
+    micRecorder.ondataavailable = (e) => { if (e.data.size > 0) micChunks.push(e.data); };
+    micRecorder.onstop = () => handleMicStop();
+    micRecorder.start();
+    micRecording = true;
+    if (micBtn) micBtn.classList.add("recording");
+    input.placeholder = "Listening\u2026 (click mic to stop)";
+  } catch {
+    // getUserMedia denied or unavailable — silently fail
+    micRecording = false;
+  }
+}
+
+function stopPaletteMic() {
+  if (micRecorder && micRecorder.state === "recording") {
+    if (micBtn) {
+      micBtn.classList.remove("recording");
+      micBtn.classList.add("processing");
+    }
+    micRecorder.stop();
+  }
+  micRecording = false;
+}
+
+async function handleMicStop() {
+  if (micBtn) micBtn.classList.remove("processing");
+  input.placeholder = "Ask DesktopAI anything...";
+  if (micChunks.length === 0) return;
+  const blob = new Blob(micChunks, { type: micRecorder?.mimeType || "audio/webm" });
+  const form = new FormData();
+  form.append("file", blob, "recording.webm");
+  try {
+    const resp = await fetch(`${BACKEND}/api/stt`, { method: "POST", body: form });
+    if (resp.ok) {
+      const data = await resp.json();
+      const text = (data.text || "").trim();
+      if (text) {
+        input.value = text;
+        await sendCommand(text);
+      }
+    }
+  } catch {
+    // STT unavailable — ignore
+  }
+}
+
+async function speakPaletteResponse(text) {
+  const clean = (text || "").trim();
+  if (!clean) return;
+  try {
+    const resp = await fetch(`${BACKEND}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: clean }),
+    });
+    if (resp.ok) {
+      const buf = await resp.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const decoded = await ctx.decodeAudioData(buf);
+      const src = ctx.createBufferSource();
+      src.buffer = decoded;
+      src.connect(ctx.destination);
+      src.onended = () => ctx.close();
+      src.start();
+    }
+  } catch {
+    // TTS unavailable — silent failure
+  }
+}
+
+// ── Mic click handler ──
+if (micBtn) {
+  micBtn.addEventListener("click", () => {
+    if (micRecording) {
+      stopPaletteMic();
+    } else {
+      startPaletteMic();
+    }
+  });
+}
+
 function showResponse(text) {
   responseText.textContent = text;
   responseEl.classList.remove("hidden");
@@ -155,6 +254,7 @@ function showResponse(text) {
 }
 
 async function dismiss() {
+  if (micRecording) stopPaletteMic();
   responseEl.classList.add("hidden");
   input.value = "";
   palette.classList.remove("loading");

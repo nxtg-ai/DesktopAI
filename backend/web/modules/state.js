@@ -94,6 +94,8 @@ export const visionScreenshotStatusEl = document.getElementById("vision-screensh
 export const visionRefreshBtn = document.getElementById("vision-refresh-btn");
 export const personalityEnergyBadgeEl = document.getElementById("personality-energy-badge");
 export const promotionStatusBadgeEl = document.getElementById("promotion-status-badge");
+export const chatMicBtnEl = document.getElementById("chat-mic-btn");
+export const chatAutoSpeakEl = document.getElementById("chat-autospeak-toggle");
 
 // ── Avatar ──
 
