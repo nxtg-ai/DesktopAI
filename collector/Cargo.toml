@@ -37,6 +37,7 @@ url = "2.5"
 tungstenite = "0.21"
 ureq = { version = "2.9", features = ["json"] }
 crossbeam-channel = "0.5"
+socket2 = "0.5"
 log = "0.4"
 env_logger = "0.11"
 jpeg-encoder = "0.6"

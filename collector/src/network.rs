@@ -2,6 +2,7 @@
 //! Uses exponential backoff for reconnection and handles ping/pong keep-alive.
 
 use crossbeam_channel::Receiver;
+use socket2::SockRef;
 use std::time::{Duration, Instant};
 use tungstenite::{connect, Message};
 use url::Url;
@@ -38,7 +39,9 @@ pub fn calculate_backoff(current_ms: u64, max_ms: u64) -> u64 {
 pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
     let mut ws = None;
     let mut last_attempt = Instant::now() - config.ws_retry;
+    let mut last_send = Instant::now();
     let poll_timeout = Duration::from_millis(50);
+    let keepalive_interval = Duration::from_secs(10);
     let mut backoff_ms: u64 = 1000;
     let max_backoff_ms = config.ws_reconnect_max_ms;
 
@@ -54,9 +57,16 @@ pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
                 println!("Connected to backend!");
                 // Reset backoff on successful connection
                 backoff_ms = 1000;
-                // Set non-blocking for command reads
+                // Set non-blocking for command reads + TCP keepalive
                 if let tungstenite::stream::MaybeTlsStream::Plain(ref s) = socket.get_ref() {
                     let _ = s.set_nonblocking(true);
+                    // TCP keepalive detects dead connections at the OS level
+                    // (WSL2 NAT can silently drop idle TCP connections)
+                    let sock = SockRef::from(s);
+                    let keepalive = socket2::TcpKeepalive::new()
+                        .with_time(Duration::from_secs(15))
+                        .with_interval(Duration::from_secs(5));
+                    let _ = sock.set_tcp_keepalive(&keepalive);
                 }
             } else {
                 // Increase backoff on failed connection
@@ -76,6 +86,8 @@ pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
                         ws = None;
                         // Fallback to HTTP
                         send_http(&config.http_url, &event);
+                    } else {
+                        last_send = Instant::now();
                     }
                 } else {
                     send_http(&config.http_url, &event);
@@ -90,6 +102,20 @@ pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
             }
         }
 
+        // Collector-side keepalive: if we haven't sent anything recently,
+        // send a small heartbeat to flush write buffers and detect dead TCP.
+        if let Some(socket) = ws.as_mut() {
+            if last_send.elapsed() >= keepalive_interval {
+                let hb = r#"{"type":"heartbeat"}"#;
+                if let Err(err) = socket.send(Message::Text(hb.to_string())) {
+                    log::warn!("Keepalive send failed: {err}");
+                    ws = None;
+                } else {
+                    last_send = Instant::now();
+                }
+            }
+        }
+
         // Check for incoming commands from backend
         if config.command_enabled {
             if let Some(socket) = ws.as_mut() {
@@ -98,7 +124,11 @@ pub fn network_worker(rx: Receiver<WindowEvent>, config: Config) {
                         handle_incoming_message(&text, socket, &config);
                     }
                     Ok(_) => {
-                        // Binary/ping/pong — ignore
+                        // Binary/ping/pong frames — tungstenite auto-queues
+                        // pong responses but only flushes on next write.
+                        // Explicit flush ensures transport-level pongs are sent
+                        // even when idle (no outgoing events).
+                        let _ = socket.flush();
                     }
                     Err(tungstenite::Error::Io(ref e))
                         if e.kind() == std::io::ErrorKind::WouldBlock =>

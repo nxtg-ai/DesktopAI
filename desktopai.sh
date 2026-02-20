@@ -74,7 +74,6 @@ do_start() {
     echo "Starting backend on $HOST:$PORT..."
     source .venv/bin/activate
     nohup uvicorn app.main:app --app-dir backend --host "$HOST" --port "$PORT" \
-        --ws-ping-interval 20 --ws-ping-timeout 20 \
         > "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
     sleep 1

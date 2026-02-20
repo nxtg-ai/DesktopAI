@@ -14,7 +14,7 @@ async def test_pong_watchdog_closes_on_timeout():
     """Watchdog should close WS when no pong arrives within timeout."""
     ws = AsyncMock()
     # last_pong set to "long ago" so elapsed > timeout immediately
-    last_pong = [asyncio.get_event_loop().time() - 100]
+    last_pong = [asyncio.get_running_loop().time() - 100]
 
     await _pong_watchdog(ws, last_pong, timeout_s=0.05)
     ws.close.assert_awaited_once()
@@ -26,12 +26,12 @@ async def test_pong_watchdog_closes_on_timeout():
 async def test_pong_watchdog_resets_on_pong():
     """Watchdog should NOT close WS if last_pong is refreshed before timeout."""
     ws = AsyncMock()
-    last_pong = [asyncio.get_event_loop().time()]
+    last_pong = [asyncio.get_running_loop().time()]
 
     async def keep_refreshing():
         for _ in range(5):
             await asyncio.sleep(0.02)
-            last_pong[0] = asyncio.get_event_loop().time()
+            last_pong[0] = asyncio.get_running_loop().time()
 
     refresh_task = asyncio.create_task(keep_refreshing())
     watchdog_task = asyncio.create_task(
