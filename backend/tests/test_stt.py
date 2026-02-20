@@ -64,10 +64,20 @@ class TestSttEngine:
         assert await engine.transcribe(b"") is None
 
     @pytest.mark.asyncio
-    async def test_transcribe_none_bytes_returns_none(self):
-        engine = SttEngine("base.en")
-        # Pass falsy value
-        assert await engine.transcribe(b"") is None
+    async def test_transcribe_multiple_segments_joined(self):
+        mock_module = MagicMock()
+        mock_model = MagicMock()
+        seg1 = MagicMock()
+        seg1.text = "Hello"
+        seg2 = MagicMock()
+        seg2.text = "world"
+        mock_model.transcribe.return_value = ([seg1, seg2], MagicMock())
+        mock_module.WhisperModel.return_value = mock_model
+
+        with patch.dict("sys.modules", {"faster_whisper": mock_module}):
+            engine = SttEngine("base.en")
+            result = await engine.transcribe(b"RIFF" + b"\x00" * 40)
+        assert result == "Hello world"
 
     @pytest.mark.asyncio
     async def test_transcribe_failure_returns_none(self):

@@ -18,6 +18,7 @@ from .config import settings
 from .routes.agent import router as agent_router
 from .routes.autonomy import router as autonomy_router
 from .routes.chat_history import router as chat_history_router
+from .routes.history import router as history_router
 from .routes.ingest import router as ingest_router
 from .routes.notifications import router as notifications_router
 from .routes.ollama_routes import router as ollama_router
@@ -136,6 +137,7 @@ app.include_router(agent_router)
 app.include_router(ingest_router)
 app.include_router(ws_router)
 app.include_router(chat_history_router)
+app.include_router(history_router)
 app.include_router(notifications_router)
 app.include_router(recipes_router)
 app.include_router(tts_router)
@@ -177,3 +179,4 @@ autonomy_promoter = _deps.autonomy_promoter
 vision_runner = _deps.vision_runner
 tts_engine = _deps.tts_engine
 stt_engine = _deps.stt_engine
+command_history = _deps.command_history

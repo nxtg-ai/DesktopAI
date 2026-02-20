@@ -8,6 +8,7 @@ os.environ.setdefault("BACKEND_DB_PATH", ":memory:")
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import app.routes.agent as agent_module
 import pytest
 from app.main import app, autonomy, bridge, chat_memory, ollama, store, vision_runner
 from app.recipes import Recipe, recipe_to_plan_steps
@@ -1490,3 +1491,240 @@ async def test_session_context_injected_into_llm_prompt(client):
     assert len(system_msgs) >= 1
     system_text = system_msgs[0]["content"]
     assert "SESSION CONTEXT:" in system_text
+
+
+# ── Kill switch WebSocket broadcast tests ────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_cancel_all_broadcasts_kill_event():
+    """_cancel_all_runs() broadcasts kill_confirmed via the WebSocket hub."""
+    mock_hub = MagicMock()
+    mock_hub.broadcast_json = AsyncMock()
+
+    with patch.object(agent_module, "hub", mock_hub), \
+         patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[]), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        count = await agent_module._cancel_all_runs()
+
+    mock_hub.broadcast_json.assert_called_once_with(
+        {"type": "kill_confirmed", "cancelled": count}
+    )
+
+
+@pytest.mark.anyio
+async def test_cancel_all_broadcast_includes_count():
+    """kill_confirmed payload includes the number of cancelled runs."""
+    mock_hub = MagicMock()
+    mock_hub.broadcast_json = AsyncMock()
+
+    mock_run = MagicMock()
+    mock_run.run_id = "run-1"
+    mock_run.status = "running"
+
+    with patch.object(agent_module, "hub", mock_hub), \
+         patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[mock_run]), \
+         patch.object(autonomy, "cancel", new_callable=AsyncMock), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        count = await agent_module._cancel_all_runs()
+
+    assert count == 1
+    mock_hub.broadcast_json.assert_called_once_with(
+        {"type": "kill_confirmed", "cancelled": 1}
+    )
+
+
+@pytest.mark.anyio
+async def test_kill_api_endpoint_returns_count(client):
+    """POST /api/kill cancels all runs and returns cancelled count."""
+    with patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[]), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        resp = await client.post("/api/kill")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "cancelled" in data
+    assert data["source"] == "kill_api"
+
+
+@pytest.mark.anyio
+async def test_kill_api_with_no_running_actions(client):
+    """POST /api/kill with nothing running returns cancelled: 0."""
+    with patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[]), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        resp = await client.post("/api/kill")
+
+    assert resp.status_code == 200
+    assert resp.json()["cancelled"] == 0
+
+
+@pytest.mark.anyio
+async def test_cancel_all_broadcast_skipped_when_hub_none():
+    """_cancel_all_runs() does not error when hub is None."""
+    with patch.object(agent_module, "hub", None), \
+         patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[]), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        # Should not raise
+        count = await agent_module._cancel_all_runs()
+
+    assert count == 0
+
+
+# ── input_source field (voice-to-command pipeline) ──────────────────────
+
+
+@pytest.mark.anyio
+async def test_chat_accepts_input_source_voice(client):
+    """ChatRequest should accept input_source='voice' without validation errors."""
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "hello", "input_source": "voice"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "response" in data
+
+
+@pytest.mark.anyio
+async def test_chat_accepts_input_source_keyboard(client):
+    """ChatRequest should accept input_source='keyboard' without validation errors."""
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "hello", "input_source": "keyboard"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "response" in data
+
+
+@pytest.mark.anyio
+async def test_chat_input_source_defaults_to_none(client):
+    """ChatRequest without input_source should work normally (field is optional)."""
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "hello"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "response" in data
+    assert "conversation_id" in data
+
+
+# ── Command history and undo tests ──────────────────────────────────────────
+
+
+def test_undo_pattern_matches():
+    """'undo' and 'undo last' both match the _undo direct pattern."""
+    from app.routes.agent import _match_direct_pattern
+
+    for phrase in ["undo", "Undo", "UNDO", "undo last", "Undo Last"]:
+        result = _match_direct_pattern(phrase)
+        assert result is not None, f"'{phrase}' should match undo pattern"
+        assert result[0] == "_undo", f"'{phrase}' should map to _undo action"
+
+
+def test_undo_cannot_appear_in_multi_command():
+    """'undo' cannot appear in a multi-step command chain."""
+    from app.routes.agent import _split_multi_command
+
+    result = _split_multi_command("open notepad, undo")
+    assert result is None
+
+    result = _split_multi_command("type hello, undo last")
+    assert result is None
+
+
+@pytest.mark.anyio
+async def test_undo_no_history_returns_message(client):
+    """'undo' with no history returns a helpful message."""
+    from app.main import command_history
+
+    # Ensure history is empty
+    await command_history.clear()
+
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "undo", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    assert data["action_triggered"] is True
+    assert "nothing to undo" in data["response"].lower()
+    # Bridge should NOT have been called for the undo
+    mock_exec.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_undo_executes_reverse_action(client):
+    """'undo' after a type_text command sends ctrl+z."""
+    from app.main import command_history
+
+    # Seed the history with a reversible action
+    await command_history.clear()
+    await command_history.record("type_text", {"text": "hello"})
+
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "undo", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+    assert data["action_triggered"] is True
+    assert "undone" in data["response"].lower() or "undo" in data["response"].lower()
+    # ctrl+z should have been sent
+    mock_exec.assert_called_once_with("send_keys", {"keys": "ctrl+z"}, timeout_s=5)
+
+
+@pytest.mark.anyio
+async def test_undo_not_triggered_without_allow_actions(client):
+    """'undo' without allow_actions=True goes to greeting/LLM, not direct bridge."""
+    from app.main import command_history
+
+    await command_history.clear()
+    await command_history.record("type_text", {"text": "hello"})
+
+    with patch.object(ollama, "available", new_callable=AsyncMock, return_value=False):
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "undo", "allow_actions": False},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    # Without allow_actions the direct pattern is never checked
+    assert data["source"] != "direct" or data.get("action_triggered") is False
+
+
+@pytest.mark.anyio
+async def test_direct_command_records_to_history(client):
+    """Executing a direct bridge command records it in command history."""
+    from app.main import command_history
+
+    await command_history.clear()
+
+    ws_patch, exec_patch, mock_exec = _mock_bridge_connected()
+    with ws_patch, exec_patch:
+        resp = await client.post(
+            "/api/chat",
+            json={"message": "type hello world", "allow_actions": True},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["source"] == "direct"
+
+    # The type_text command should now appear in history
+    entries = await command_history.recent(limit=5)
+    actions = [e["action"] for e in entries]
+    assert "type_text" in actions

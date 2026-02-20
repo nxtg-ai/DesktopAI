@@ -139,6 +139,13 @@ export async function ensureMicrophone() {
   }
 }
 
+// ── Voice auto-submit ────────────────────────────────────────────
+let voiceAutoSubmit = true;
+
+export function setVoiceAutoSubmit(enabled) {
+  voiceAutoSubmit = enabled;
+}
+
 // ── Server-side STT (faster-whisper) ────────────────────────────
 let _serverSttAvailable = null;
 
@@ -198,6 +205,11 @@ export async function stopServerRecording() {
             appState.recognitionTranscript = `${appState.recognitionTranscript} ${text}`.trim();
             voiceTextEl.value = appState.recognitionTranscript;
             avatar.bump();
+            if (voiceAutoSubmit && text.trim()) {
+              document.dispatchEvent(new CustomEvent("voice-command", {
+                detail: { text: text.trim(), source: "voice" },
+              }));
+            }
           }
           setVoiceState("standby", "neutral");
           sttStatusEl.textContent = "Mic: standby";

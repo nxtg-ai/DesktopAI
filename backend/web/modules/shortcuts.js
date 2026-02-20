@@ -42,5 +42,11 @@ export function initShortcuts() {
         cancelAutonomyRun();
       }
     }
+
+    // Ctrl+M — Toggle voice recording
+    if (e.code === "KeyM" && e.ctrlKey && !e.shiftKey) {
+      e.preventDefault();
+      document.dispatchEvent(new CustomEvent("toggle-voice"));
+    }
   });
 }

@@ -17,7 +17,9 @@ from ..deps import (
     bridge,
     chat_memory,
     classifier,
+    command_history,
     get_personality_mode,
+    hub,
     llm,
     ollama,
     personality_adapter,
@@ -104,6 +106,9 @@ _DIRECT_PATTERNS: list[tuple[re.Pattern, str, Callable[[re.Match], dict[str, Any
     # Kill switch: stop/kill/cancel/abort all actions
     (re.compile(r"^(?:stop|kill|cancel|abort)(?:\s+(?:all|everything|actions?))?$", re.I),
      "_cancel_all", lambda m: {}),
+    # Undo: reverse the last reversible direct bridge action
+    (re.compile(r"^undo(?:\s+last)?$", re.I),
+     "_undo", lambda m: {}),
 ]
 
 
@@ -145,14 +150,30 @@ def _split_multi_command(
             return None
         if matched[0] == "_cancel_all":
             return None  # cancel-all cannot be in a chain
+        if matched[0] == "_undo":
+            return None  # undo cannot be in a chain
         matches.append(matched)
     return matches
 
 
 async def _execute_direct_action(
-    action: str, params: dict[str, Any],
+    action: str,
+    params: dict[str, Any],
+    multi_step_group: Optional[str] = None,
 ) -> Optional[dict]:
     """Execute a single direct bridge action. Returns result dict or None."""
+    # Capture foreground window title before executing, for undo context.
+    prev_window: Optional[str] = None
+    try:
+        snap = await store.current()
+        if snap is not None:
+            if isinstance(snap, dict):
+                prev_window = snap.get("title") or snap.get("window_title")
+            else:
+                prev_window = getattr(snap, "title", None)
+    except Exception:
+        pass
+
     if action == "_type_in_window":
         focus_result = await bridge.execute(
             "focus_window", {"title": params["window"]}, timeout_s=5,
@@ -197,6 +218,19 @@ async def _execute_direct_action(
     else:
         result = await bridge.execute(action, params, timeout_s=5)
 
+    # Record to command history for undo support.
+    if command_history is not None:
+        try:
+            await command_history.record(
+                action=action,
+                parameters=params,
+                result=result if isinstance(result, dict) else None,
+                prev_window=prev_window,
+                multi_step_group=multi_step_group,
+            )
+        except Exception as exc:
+            logger.warning("Failed to record command history: %s", exc)
+
     return {"action": action, "parameters": params, "result": result}
 
 
@@ -206,11 +240,15 @@ async def _try_multi_command(
     """Execute multiple direct bridge commands sequentially.
 
     Returns a result dict with steps list. Stops on first failure.
+    All steps in the chain share a single multi_step_group UUID so they can
+    be identified together in command history.
     """
+    import uuid as _uuid
+    group_id = str(_uuid.uuid4())
     steps: list[dict] = []
     for i, (action, params) in enumerate(matches):
         try:
-            result = await _execute_direct_action(action, params)
+            result = await _execute_direct_action(action, params, multi_step_group=group_id)
             steps.append({"action": action, "parameters": params, "result": result})
         except Exception as exc:
             logger.warning("Multi-step %d failed: %s", i, exc)
@@ -242,7 +280,19 @@ async def _cancel_all_runs() -> int:
                 cancelled += 1
             except Exception:
                 pass
+    if hub is not None:
+        try:
+            await hub.broadcast_json({"type": "kill_confirmed", "cancelled": cancelled})
+        except Exception:
+            pass
     return cancelled
+
+
+@router.post("/api/kill")
+async def kill_all() -> dict:
+    """Emergency stop — cancel all running actions and broadcast kill event."""
+    count = await _cancel_all_runs()
+    return {"cancelled": count, "source": "kill_api"}
 
 
 async def _find_last_non_browser_window() -> Optional[str]:
@@ -278,6 +328,70 @@ async def _try_direct_command(message: str) -> Optional[dict]:
     if action == "_cancel_all":
         cancelled = await _cancel_all_runs()
         return {"action": action, "parameters": params, "result": {"cancelled": cancelled}}
+
+    # Undo: reverse the last reversible command in history
+    if action == "_undo":
+        if command_history is None:
+            return {
+                "action": action,
+                "parameters": params,
+                "result": {"message": "Command history is not available."},
+                "response": "Command history is not available.",
+            }
+        entry = await command_history.last_undoable()
+        if entry is None:
+            return {
+                "action": action,
+                "parameters": params,
+                "result": {"message": "Nothing to undo."},
+                "response": "Nothing to undo.",
+            }
+        if not bridge.connected:
+            logger.info("direct-bridge: bridge not connected, cannot undo")
+            return {
+                "action": action,
+                "parameters": params,
+                "result": {"message": "Bridge not connected — cannot undo."},
+                "response": "Bridge not connected — cannot undo.",
+            }
+        undo_action = entry["undo_action"]
+        undo_params = entry["undo_parameters"] or {}
+        try:
+            if undo_action == "_undo_type_in_window":
+                await bridge.execute(
+                    "focus_window", {"title": undo_params["window"]}, timeout_s=5,
+                )
+                await asyncio.sleep(0.3)
+                await bridge.execute("send_keys", {"keys": "ctrl+z"}, timeout_s=5)
+            elif undo_action == "_scroll_in_window":
+                await bridge.execute(
+                    "focus_window", {"title": undo_params["window"]}, timeout_s=5,
+                )
+                await asyncio.sleep(0.3)
+                await bridge.execute(
+                    "scroll",
+                    {"direction": undo_params["direction"], "amount": undo_params["amount"]},
+                    timeout_s=5,
+                )
+            else:
+                await bridge.execute(undo_action, undo_params, timeout_s=5)
+            await command_history.mark_undone(entry["entry_id"])
+        except Exception as exc:
+            logger.warning("Undo execution failed: %s", exc)
+            return {
+                "action": action,
+                "parameters": params,
+                "result": {"error": str(exc)},
+                "response": f"Undo failed: {exc}",
+            }
+        friendly = f"{entry['action']} {json.dumps(entry['parameters'])}"
+        return {
+            "action": action,
+            "parameters": params,
+            "result": {"undone": entry},
+            "response": f"Undone: {friendly}",
+            "undone": entry,
+        }
 
     if not bridge.connected:
         logger.info("direct-bridge: bridge not connected, falling through")
@@ -514,8 +628,8 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
     direct_match = _match_direct_pattern(message) if (request.allow_actions and not action_triggered) else None
     if not action_triggered and direct_match:
         action_triggered = True
-        # _cancel_all works without bridge; other commands need it
-        needs_bridge = direct_match[0] != "_cancel_all"
+        # _cancel_all and _undo handle bridge connectivity internally
+        needs_bridge = direct_match[0] not in {"_cancel_all", "_undo"}
         if not needs_bridge or bridge.connected:
             try:
                 direct_result = await _try_direct_command(message)
@@ -542,9 +656,12 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
         except Exception as exc:
             logger.warning("Chat action trigger failed: %s", exc)
 
-    # Save user message
+    # Save user message — include input_source in context if provided
+    user_ctx = dict(ctx_dict) if ctx_dict else {}
+    if request.input_source:
+        user_ctx["input_source"] = request.input_source
     await chat_memory.save_message(
-        conversation_id, "user", message, desktop_context=ctx_dict
+        conversation_id, "user", message, desktop_context=user_ctx or None
     )
 
     # Personality mode: explicit request > auto-adapt > config default
@@ -610,6 +727,9 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
         if action == "_cancel_all":
             count = direct_result["result"]["cancelled"] if direct_result else 0
             response = f"Killed {count} running action(s)." if count > 0 else "No actions were running."
+        elif action == "_undo":
+            # _try_direct_command always embeds a "response" key for _undo
+            response = (direct_result or {}).get("response", "Undo attempted.")
         elif action == "_type_in_window":
             friendly = f"typed in {params.get('window', '')}"
             response = f"Done — {friendly}."
@@ -630,6 +750,8 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
             "conversation_id": conversation_id,
             "personality_mode": mode,
         }
+        if direct_result and direct_result.get("undone"):
+            result["undone"] = direct_result["undone"]
         if screenshot_b64:
             result["screenshot_b64"] = screenshot_b64
         return result

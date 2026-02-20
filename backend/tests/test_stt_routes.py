@@ -92,6 +92,30 @@ async def test_get_stt_status_unavailable(mock_engine_unavailable):
 
 
 @pytest.mark.asyncio
+async def test_post_stt_oversized_file_413(mock_engine_available):
+    big_payload = b"RIFF" + b"\x00" * (10 * 1024 * 1024 + 1)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/api/stt",
+            files={"file": ("big.wav", big_payload, "audio/wav")},
+        )
+    assert resp.status_code == 413
+    assert "too large" in resp.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_get_stt_status_always_returns_all_fields(mock_engine_unavailable):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/api/stt/status")
+    data = resp.json()
+    assert data["available"] is False
+    assert "model_size" in data
+    assert "device" in data
+    assert "compute_type" in data
+    assert "language" in data
+
+
+@pytest.mark.asyncio
 async def test_readiness_includes_stt():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.get("/api/readiness/status")

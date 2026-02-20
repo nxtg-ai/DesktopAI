@@ -87,6 +87,9 @@ export function connectWs() {
       if (payload.type === "notification" && payload.notification) {
         handleNotificationWsMessage(payload.notification);
       }
+      if (payload.type === "kill_confirmed") {
+        document.dispatchEvent(new CustomEvent("kill-confirmed", { detail: payload }));
+      }
     } catch (err) {
       console.error("ws message error", err);
       queueTelemetry("ws_message_error", "ws payload parse failed", { error: String(err) });

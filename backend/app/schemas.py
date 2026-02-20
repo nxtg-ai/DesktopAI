@@ -233,5 +233,6 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     allow_actions: bool = True
     conversation_id: Optional[str] = None
+    input_source: Optional[str] = None  # "keyboard", "voice", "palette"
     personality_mode: Optional[PersonalityMode] = None
     stream: bool = False

@@ -178,7 +178,23 @@ export async function fetchPersonalityStatus() {
   } catch { /* ignore */ }
 }
 
-export async function sendChatMessage(text) {
+// Listen for kill confirmation broadcast from backend WebSocket hub
+document.addEventListener("kill-confirmed", () => {
+  const container = document.getElementById("chat-container") || document.body;
+  container.classList.add("kill-flash");
+  setTimeout(() => container.classList.remove("kill-flash"), 1500);
+});
+
+// Listen for voice commands dispatched by voice.js after STT transcription
+document.addEventListener("voice-command", async (e) => {
+  const { text, source } = e.detail || {};
+  if (!text) return;
+  // Fill the input field for visual feedback before submitting
+  if (chatInputEl) chatInputEl.value = text;
+  await sendChatMessage(text, { allow_actions: true, input_source: source || "voice" });
+});
+
+export async function sendChatMessage(text, opts = {}) {
   const message = (text || "").trim();
   if (!message || appState.chatSending) return;
   appState.chatSending = true;
@@ -189,10 +205,16 @@ export async function sendChatMessage(text) {
   appendChatMessage("user", message);
   chatInputEl.value = "";
   showChatTyping();
-  queueTelemetry("chat_sent", "chat message sent", { chars: message.length });
+  queueTelemetry("chat_sent", "chat message sent", { chars: message.length, source: opts.input_source || "keyboard" });
   try {
     const personality = (personalityModeEl && personalityModeEl.value) || "assistant";
-    const payload = { message, allow_actions: true, personality_mode: personality, stream: true };
+    const payload = {
+      message,
+      allow_actions: opts.allow_actions !== undefined ? opts.allow_actions : true,
+      personality_mode: personality,
+      stream: true,
+    };
+    if (opts.input_source) payload.input_source = opts.input_source;
     if (appState.conversationId) payload.conversation_id = appState.conversationId;
     const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
 

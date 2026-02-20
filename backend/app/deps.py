@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -17,6 +18,7 @@ from .bridge import CommandBridge
 from .chat_memory import ChatMemoryStore
 from .classifier import ActivityClassifier
 from .collector_status import CollectorStatusStore
+from .command_history import CommandHistoryStore
 from .config import settings
 from .db import EventDatabase
 from .llm_provider import LLMProvider, OpenAIProvider
@@ -166,6 +168,11 @@ if settings.stt_enabled:
         language=settings.stt_language,
         model_dir=settings.stt_model_dir,
     )
+
+command_history = CommandHistoryStore(
+    path=str(Path(settings.db_path).parent / "command-history.db"),
+    max_entries=500,
+)
 
 
 async def _persist_task_update(task) -> None:

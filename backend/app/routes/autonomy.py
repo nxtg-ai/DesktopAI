@@ -17,6 +17,7 @@ from ..deps import (
     autonomy,
     autonomy_promoter,
     db,
+    hub,
     planner,
     tasks,
     vision_runner,
@@ -162,6 +163,11 @@ async def cancel_all_autonomy_runs() -> dict:
                 cancelled.append(_dump(result))
             except Exception:
                 pass
+    if hub is not None:
+        try:
+            await hub.broadcast_json({"type": "kill_confirmed", "cancelled": len(cancelled)})
+        except Exception:
+            pass
     return {"cancelled": len(cancelled), "runs": cancelled}
 
 

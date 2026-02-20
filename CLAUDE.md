@@ -49,11 +49,11 @@ An intelligent desktop assistant that observes user activity and can autonomousl
 ## Key Directories
 ```
 backend/app/          - FastAPI application code
-backend/app/routes/   - 13 route modules
-backend/tests/        - pytest test suite (612 unit + 12 integration tests)
+backend/app/routes/   - 16 route modules
+backend/tests/        - pytest test suite (724+ unit + 12 integration tests)
 backend/web/          - Static web UI (HTML/CSS/JS)
 backend/web/modules/  - 10 ES modules
-collector/            - Rust collector source (74 tests)
+collector/            - Rust collector source (94 tests)
 tauri-app/            - Tauri native desktop app (avatar overlay)
 ui-tests/             - Playwright end-to-end tests
 ```
@@ -111,7 +111,7 @@ make ui-test                                      # Headless Playwright
 - `GET /api/tts/voices` — List available TTS voices
 
 ## Testing Standards
-- 612 Python unit tests + 12 integration tests, 74 Rust tests — never decrease
+- 724+ Python unit tests + 12 integration tests, 94 Rust tests — never decrease
 - New features require test coverage
 - Edge cases and error paths must be tested
 - CI runs ruff, pyright, and clippy before tests
@@ -144,6 +144,14 @@ Direct bridge patterns (no vision/LLM needed):
 - **Dep**: `pip install kokoro-onnx` (pulls onnxruntime, numpy)
 - **Singleton**: `tts_engine` in `deps.py`, conditional on `tts_enabled`
 - **Readiness**: TTS check added (non-required) — shows `tts_available` + `tts_engine` in summary
+
+## STT (faster-whisper)
+- **Engine**: `backend/app/stt.py` — `SttEngine` class wrapping `faster_whisper`, lazy model init on first request
+- **Routes**: `POST /api/stt` (audio→text, multipart upload, 10MB limit), `GET /api/stt/status`
+- **Config**: `STT_ENABLED`, `STT_MODEL_SIZE` (base.en), `STT_LANGUAGE`, `STT_DEVICE` (cpu), `STT_COMPUTE_TYPE` (int8), `STT_MODEL_DIR`
+- **Dep**: `pip install faster-whisper` (pulls ctranslate2, tokenizers — all Apache 2.0)
+- **Singleton**: `stt_engine` in `deps.py`, conditional on `stt_enabled`
+- **Readiness**: STT check added (non-required) — shows `stt_available` + `stt_engine` in summary
 
 ## Key Patterns
 - SQLite stores: separate DB file, `threading.Lock`, `asyncio.to_thread`, WAL mode
@@ -205,7 +213,19 @@ Direct bridge patterns (no vision/LLM needed):
 - **Phase 2C**: ONNX model export (UI-DETR-1 → `models/ui-detr/ui-detr-1.onnx`, 124MB), 5 integration tests (ONNX format, inference, detection reasoning with real Ollama, latency, error handling), CI workflow + Makefile targets.
 - **Phase 2D**: End-to-end pipeline wiring — Rust detector logging (model load failure, detection count/timing), Python observe logging (detection receipt), Windows deployment script (`scripts/deploy-detection-model.sh`).
 
-## What's Next (Sprint 8+ — see BACKLOG.md)
-- Vision Phase 2 UAT: Deploy model to Windows, run collector with `DETECTION_ENABLED=true`, verify detection boxes flow through chat
+## What's Shipped (Sprint 9)
+- **NL Multi-Step Macros (N-12)**: Chain direct bridge commands with `, ` / ` then ` / ` and then ` delimiters. Sequential execution with 0.3s inter-step delay, stop-on-failure. 10 new tests.
+- **Deep Context Model (N-13)**: Session context enrichment injected into LLM system prompt (activity category, energy level, focus path, session duration). Config flag `CONTEXT_ENRICHMENT_ENABLED`. 6 new tests.
+- **Voice Input STT (N-06)**: Server-side speech-to-text via `faster-whisper` (Apache 2.0). `POST /api/stt` (multipart upload, 10MB limit, VAD filter), `GET /api/stt/status`. 19 new tests.
+- **Vision Phase 2 UAT (N-03)**: 2 Rust detection serialization tests, 1 Python end-to-end pipeline test, deploy script ONNX Runtime note.
+
+## What's Shipped (Sprint 10)
+- **Command History + Undo (N-15)**: SQLite-backed command history store, reversibility mapping, "undo" chat command, `GET /api/commands/history`, `GET /api/commands/last-undoable`.
+- **Kill Switch WS Broadcast (N-10)**: `kill_confirmed` event broadcast via WebSocket hub on cancel-all, `POST /api/kill` convenience endpoint, browser UI kill flash.
+- **Voice-to-Command Pipeline**: Auto-submit transcribed voice to chat, `input_source` telemetry field, mic button in palette, `Ctrl+M` shortcut.
+
+## What's Next (see BACKLOG.md)
 - 3D Blender avatar with WebGL/WebGPU renderer
-- Natural language multi-step macros
+- Wake word ("Hey Desktop") via Picovoice Porcupine
+- DyTopo multi-agent routing PoC
+- Command history undo for multi-step chains

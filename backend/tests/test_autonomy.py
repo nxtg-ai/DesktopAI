@@ -1,7 +1,16 @@
 import asyncio
+import os
 import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+os.environ.setdefault("BACKEND_DB_PATH", ":memory:")
+
+import app.routes.autonomy as autonomy_module
 from app.autonomy import AutonomousRunner
+from app.main import app, autonomy, vision_runner
 from app.orchestrator import TaskOrchestrator
 from app.schemas import AutonomyApproveRequest, AutonomyStartRequest
 
@@ -179,3 +188,75 @@ def test_shutdown_marks_inflight_runs_failed():
         assert "shutdown" in (after.last_error or "").lower()
 
     asyncio.run(scenario())
+
+
+# ── Kill switch broadcast tests ───────────────────────────────────────────
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
+async def client():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        yield ac
+
+
+@pytest.mark.anyio
+async def test_cancel_all_route_broadcasts_kill_event(client):
+    """POST /api/autonomy/cancel-all broadcasts kill_confirmed via hub."""
+    mock_hub = MagicMock()
+    mock_hub.broadcast_json = AsyncMock()
+
+    with patch.object(autonomy_module, "hub", mock_hub), \
+         patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[]), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        resp = await client.post("/api/autonomy/cancel-all")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["cancelled"] == 0
+    mock_hub.broadcast_json.assert_called_once_with(
+        {"type": "kill_confirmed", "cancelled": 0}
+    )
+
+
+@pytest.mark.anyio
+async def test_cancel_all_route_broadcast_includes_run_count(client):
+    """kill_confirmed payload reflects number of runs actually cancelled."""
+    mock_hub = MagicMock()
+    mock_hub.broadcast_json = AsyncMock()
+
+    mock_run = MagicMock()
+    mock_run.run_id = "run-42"
+    mock_run.status = "running"
+    mock_run.updated_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+
+    with patch.object(autonomy_module, "hub", mock_hub), \
+         patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[mock_run]), \
+         patch.object(autonomy, "cancel", new_callable=AsyncMock, return_value=mock_run), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        resp = await client.post("/api/autonomy/cancel-all")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["cancelled"] == 1
+    mock_hub.broadcast_json.assert_called_once_with(
+        {"type": "kill_confirmed", "cancelled": 1}
+    )
+
+
+@pytest.mark.anyio
+async def test_cancel_all_route_broadcast_skipped_when_hub_none(client):
+    """cancel-all route does not error if hub is None."""
+    with patch.object(autonomy_module, "hub", None), \
+         patch.object(autonomy, "list_runs", new_callable=AsyncMock, return_value=[]), \
+         patch.object(vision_runner, "list_runs", new_callable=AsyncMock, return_value=[]):
+        resp = await client.post("/api/autonomy/cancel-all")
+
+    assert resp.status_code == 200
+    assert resp.json()["cancelled"] == 0

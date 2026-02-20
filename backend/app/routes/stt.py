@@ -46,14 +46,9 @@ async def post_stt(file: UploadFile):
 
 @router.get("/api/stt/status")
 async def get_stt_status() -> dict:
-    if stt_engine is None or not stt_engine.available:
-        return {
-            "available": False,
-            "model_size": settings.stt_model_size,
-            "device": settings.stt_device,
-        }
+    available = stt_engine is not None and stt_engine.available
     return {
-        "available": True,
+        "available": available,
         "model_size": settings.stt_model_size,
         "device": settings.stt_device,
         "compute_type": settings.stt_compute_type,
