@@ -130,15 +130,15 @@ async def _heartbeat_sender(ws: WebSocket, interval_s: float) -> None:
 
 
 async def _pong_watchdog(
-    ws: WebSocket, last_pong: list[float], timeout_s: float
+    ws: WebSocket, last_recv: list[float], timeout_s: float
 ) -> None:
-    """Force-close WS if no pong received within timeout."""
+    """Force-close WS if no message received within timeout."""
     while True:
         await asyncio.sleep(timeout_s)
-        elapsed = asyncio.get_running_loop().time() - last_pong[0]
+        elapsed = asyncio.get_running_loop().time() - last_recv[0]
         if elapsed > timeout_s:
             logger.warning(
-                "Collector pong timeout (%.1fs), closing dead WS", elapsed
+                "Collector recv timeout (%.1fs), closing dead WS", elapsed
             )
             try:
                 await ws.close(code=1001, reason="pong timeout")
@@ -154,28 +154,25 @@ async def ingest_ws(ws: WebSocket) -> None:
     await collector_status.note_ws_connected(datetime.now(timezone.utc))
     bridge.attach(ws)
     await _broadcast_collector_greeting()
-    last_pong: list[float] = [asyncio.get_running_loop().time()]
+    last_recv: list[float] = [asyncio.get_running_loop().time()]
     pong_timeout_s = settings.collector_heartbeat_interval_s * 2.5
     heartbeat_task = asyncio.create_task(
         _heartbeat_sender(ws, settings.collector_heartbeat_interval_s)
     )
     watchdog_task = asyncio.create_task(
-        _pong_watchdog(ws, last_pong, pong_timeout_s)
+        _pong_watchdog(ws, last_recv, pong_timeout_s)
     )
     try:
         while True:
             data = await ws.receive_json()
+            # Any message from collector proves the connection is alive
+            last_recv[0] = asyncio.get_running_loop().time()
             msg_type = data.get("type", "")
             if msg_type == "command_result":
                 bridge.handle_result(data)
                 continue
-            if msg_type == "pong":
-                last_pong[0] = asyncio.get_running_loop().time()
+            if msg_type in ("pong", "heartbeat"):
                 await collector_status.note_heartbeat(datetime.now(timezone.utc))
-                continue
-            if msg_type == "heartbeat":
-                # Collector-side keepalive — proof the connection is alive
-                last_pong[0] = asyncio.get_running_loop().time()
                 continue
             event = _parse_event(data)
             await _handle_event(event, transport="ws")
