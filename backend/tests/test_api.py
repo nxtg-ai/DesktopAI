@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 os.environ.setdefault("BACKEND_DB_PATH", ":memory:")
@@ -567,6 +568,7 @@ def test_ws_snapshot_serializes_datetimes():
         assert isinstance(snapshot["events"][0]["timestamp"], str)
 
 
+@pytest.mark.integration
 def test_autonomy_run_completes_without_approval():
     _reset_runtime()
     resp = client.post(
@@ -599,6 +601,7 @@ def test_autonomy_run_returns_503_when_ollama_planner_required_unavailable(monke
     assert "ollama planner required" in payload.get("detail", "").lower()
 
 
+@pytest.mark.integration
 def test_autonomy_run_waits_for_approval_then_completes():
     _reset_runtime()
     resp = client.post(
@@ -643,6 +646,7 @@ def test_autonomy_run_records_current_planner_mode():
         planner.set_mode(original_mode)
 
 
+@pytest.mark.integration
 def test_autonomy_run_auto_approve_completes_irreversible_flow():
     _reset_runtime()
     resp = client.post(
@@ -662,6 +666,7 @@ def test_autonomy_run_auto_approve_completes_irreversible_flow():
     assert done["last_error"] is None
 
 
+@pytest.mark.integration
 def test_autonomy_run_cancel_while_waiting_approval():
     _reset_runtime()
     resp = client.post(
@@ -678,6 +683,7 @@ def test_autonomy_run_cancel_while_waiting_approval():
     assert payload["status"] == "cancelled"
 
 
+@pytest.mark.integration
 def test_readiness_gate_auto_approve_completes():
     _reset_runtime()
     resp = client.post(
@@ -699,6 +705,7 @@ def test_readiness_gate_auto_approve_completes():
     assert payload["timeline"]
 
 
+@pytest.mark.integration
 def test_readiness_gate_requires_manual_approval_when_disabled():
     _reset_runtime()
     resp = client.post(
@@ -720,6 +727,7 @@ def test_readiness_gate_requires_manual_approval_when_disabled():
     assert payload["run"]["status"] == "cancelled"
 
 
+@pytest.mark.integration
 def test_readiness_gate_can_keep_waiting_run_when_cleanup_disabled():
     _reset_runtime()
     resp = client.post(
@@ -776,6 +784,7 @@ def test_readiness_gate_returns_preflight_failed(monkeypatch):
     assert payload["preflight"]["ok"] is False
 
 
+@pytest.mark.integration
 def test_readiness_matrix_runs_multiple_cases():
     _reset_runtime()
     resp = client.post(
@@ -800,6 +809,7 @@ def test_readiness_matrix_runs_multiple_cases():
     assert all(item["report"]["ok"] is True for item in payload["results"])
 
 
+@pytest.mark.integration
 def test_readiness_matrix_stop_on_failure():
     _reset_runtime()
     resp = client.post(
@@ -825,6 +835,7 @@ def test_readiness_matrix_stop_on_failure():
     assert payload["results"][0]["report"]["reason"] == "approval_required"
 
 
+@pytest.mark.integration
 def test_autonomy_run_broadcasts_ws_updates(monkeypatch):
     _reset_runtime()
     broadcasts = []

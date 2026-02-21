@@ -20,7 +20,7 @@ os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "120")
 os.environ.setdefault("ACTION_EXECUTOR_MODE", "simulated")
 
 from app.auth import _rate_limiter
-from app.main import autonomy, db, ollama, planner, runtime_logs, settings, store, tasks
+from app.main import autonomy, bridge, db, ollama, planner, runtime_logs, settings, store, tasks
 
 
 def _run(coro):
@@ -43,5 +43,6 @@ def reset_runtime_state():
     ollama.reset_active_model()
     planner.set_mode(settings.autonomy_planner_mode)
     runtime_logs.clear()
+    bridge.detach()
     _rate_limiter._hits.clear()
     shutil.rmtree("/tmp/desktopai-ui-telemetry-test", ignore_errors=True)
