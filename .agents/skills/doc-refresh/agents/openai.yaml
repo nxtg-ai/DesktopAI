@@ -1,0 +1,4 @@
+interface:
+  display_name: "Doc Refresh"
+  short_description: "Align docs with current behavior and commands"
+  default_prompt: "Refresh affected project docs based on implemented behavior."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Intake"
+  short_description: "Map repo architecture and safe edit points quickly"
+  default_prompt: "Run a repo intake and produce the minimal implementation map."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Checklist"
+  short_description: "Validate versioning, tests, artifacts, and release notes"
+  default_prompt: "Apply the release checklist and return go/no-go status."

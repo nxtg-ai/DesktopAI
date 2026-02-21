@@ -1,0 +1,4 @@
+interface:
+  display_name: "Windows UI Automation Guardrails"
+  short_description: "Plan safe Windows UI actions with rollback controls"
+  default_prompt: "Apply Windows UI automation guardrails to this requested workflow."

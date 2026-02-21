@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Review Gate"
+  short_description: "Review diffs for bugs, regressions, and test gaps"
+  default_prompt: "Run a risk-first code review gate on this change set."

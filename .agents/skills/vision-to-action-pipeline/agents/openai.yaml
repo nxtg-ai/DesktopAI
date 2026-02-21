@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vision to Action Pipeline"
+  short_description: "Design perception to grounded-action control loops"
+  default_prompt: "Design a safe vision-to-action pipeline for this task."

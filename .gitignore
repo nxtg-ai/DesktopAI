@@ -38,8 +38,9 @@ SOTA-PROMPT.md
 .claude/claudio-mission-0[1-4]*.md
 .claude/gap_analysis*.txt
 
-# NXTG-Forge / plugin caches
-.agents/
+# NXTG-Forge / plugin caches (skills are version-controlled)
+.agents/*
+!.agents/skills/
 
 # Playwright MCP logs
 .playwright-mcp/

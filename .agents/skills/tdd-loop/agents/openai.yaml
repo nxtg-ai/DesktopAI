@@ -1,0 +1,4 @@
+interface:
+  display_name: "TDD Loop"
+  short_description: "Implement changes with small test-first iterations"
+  default_prompt: "Use the TDD loop workflow to implement this change safely."
