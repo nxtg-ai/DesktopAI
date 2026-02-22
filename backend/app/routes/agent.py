@@ -109,6 +109,12 @@ _DIRECT_PATTERNS: list[tuple[re.Pattern, str, Callable[[re.Match], dict[str, Any
     # Undo: reverse the last reversible direct bridge action
     (re.compile(r"^undo(?:\s+last)?$", re.I),
      "_undo", lambda m: {}),
+    # Gmail PDF pack: compile newsletters
+    (re.compile(
+        r"^(?:compile|build|generate|create|run)\s+(?:gmail\s+)?newsletters?"
+        r"(?:\s+(?:for|from)\s+(?:the\s+)?(?:last\s+)?(\d+)\s+days?)?$",
+        re.I,
+    ), "_pack_gmail_pdf", lambda m: {"days": int(m.group(1)) if m.group(1) else 1}),
 ]
 
 
@@ -152,6 +158,8 @@ def _split_multi_command(
             return None  # cancel-all cannot be in a chain
         if matched[0] == "_undo":
             return None  # undo cannot be in a chain
+        if matched[0] == "_pack_gmail_pdf":
+            return None  # long-running pack cannot be in a chain
         matches.append(matched)
     return matches
 
@@ -393,6 +401,29 @@ async def _try_direct_command(message: str) -> Optional[dict]:
             "undone": entry,
         }
 
+    # Gmail PDF pack: runs as subprocess, no bridge needed
+    if action == "_pack_gmail_pdf":
+        from ..deps import gmail_pdf_pack
+
+        if gmail_pdf_pack is None or not gmail_pdf_pack.available:
+            return {
+                "action": action, "parameters": params,
+                "result": {"message": "Gmail PDF pack not available."},
+                "response": "Gmail PDF pack is not available.",
+            }
+        try:
+            result = await gmail_pdf_pack.run(days=params.get("days", 1))
+        except RuntimeError as exc:
+            return {
+                "action": action, "parameters": params,
+                "result": {"error": str(exc)}, "response": str(exc),
+            }
+        if result["status"] == "success":
+            resp = f"Done — newsletters compiled. PDF: {result.get('output_path', 'check output directory')}."
+        else:
+            resp = f"Newsletter compilation failed (exit code {result.get('exit_code')})."
+        return {"action": action, "parameters": params, "result": result, "response": resp}
+
     if not bridge.connected:
         logger.info("direct-bridge: bridge not connected, falling through")
         return None
@@ -629,7 +660,7 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
     if not action_triggered and direct_match:
         action_triggered = True
         # _cancel_all and _undo handle bridge connectivity internally
-        needs_bridge = direct_match[0] not in {"_cancel_all", "_undo"}
+        needs_bridge = direct_match[0] not in {"_cancel_all", "_undo", "_pack_gmail_pdf"}
         if not needs_bridge or bridge.connected:
             try:
                 direct_result = await _try_direct_command(message)
@@ -730,6 +761,8 @@ async def chat_endpoint(request: ChatRequest):  # -> dict | StreamingResponse
         elif action == "_undo":
             # _try_direct_command always embeds a "response" key for _undo
             response = (direct_result or {}).get("response", "Undo attempted.")
+        elif action == "_pack_gmail_pdf":
+            response = (direct_result or {}).get("response", "Newsletter compilation attempted.")
         elif action == "_type_in_window":
             friendly = f"typed in {params.get('window', '')}"
             response = f"Done — {friendly}."

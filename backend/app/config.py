@@ -125,6 +125,22 @@ class Settings:
     stt_compute_type: str = _env("STT_COMPUTE_TYPE", "int8")
     stt_model_dir: str = _env("STT_MODEL_DIR", "models/whisper")
 
+    # ── Packs ────────────────────────────────────────────────────────────────
+    gmail_pdf_enabled: bool = _env_bool("GMAIL_PDF_ENABLED", True)
+    gmail_pdf_script_dir: str = _env(
+        "GMAIL_PDF_SCRIPT_DIR",
+        os.path.expanduser("~/projects/.nxtg.ai/DesktopAI/3-Tools-Utils/gmail"),
+    )
+    gmail_pdf_output_dir: str = _env(
+        "GMAIL_PDF_OUTPUT_DIR",
+        os.path.expanduser("~/projects/.nxtg.ai/DesktopAI/3-Tools-Utils/gmail/.outputs"),
+    )
+    gmail_pdf_timeout_s: int = _env_int("GMAIL_PDF_TIMEOUT_S", 600)
+    gmail_pdf_python: str = _env(
+        "GMAIL_PDF_PYTHON",
+        os.path.expanduser("~/projects/.nxtg.ai/DesktopAI/3-Tools-Utils/gmail/.venv/bin/python"),
+    )
+
     vision_mode: str = _env("VISION_MODE", "auto")
     detection_model_path: str = _env(
         "DETECTION_MODEL_PATH", "models/ui-detr/ui-detr-1.onnx"

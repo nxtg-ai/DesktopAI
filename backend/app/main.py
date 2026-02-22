@@ -22,6 +22,7 @@ from .routes.history import router as history_router
 from .routes.ingest import router as ingest_router
 from .routes.notifications import router as notifications_router
 from .routes.ollama_routes import router as ollama_router
+from .routes.packs import router as packs_router
 from .routes.readiness import router as readiness_router
 from .routes.recipes import router as recipes_router
 
@@ -142,6 +143,7 @@ app.include_router(notifications_router)
 app.include_router(recipes_router)
 app.include_router(tts_router)
 app.include_router(stt_router)
+app.include_router(packs_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -180,3 +182,4 @@ vision_runner = _deps.vision_runner
 tts_engine = _deps.tts_engine
 stt_engine = _deps.stt_engine
 command_history = _deps.command_history
+gmail_pdf_pack = _deps.gmail_pdf_pack

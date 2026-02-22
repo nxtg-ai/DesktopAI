@@ -174,6 +174,21 @@ command_history = CommandHistoryStore(
     max_entries=500,
 )
 
+from packs.gmail_pdf import GmailPdfPack, PackRunStore
+
+gmail_pdf_pack: GmailPdfPack | None = None
+if settings.gmail_pdf_enabled:
+    _gmail_pdf_store = PackRunStore(
+        path=str(Path(settings.db_path).parent / "gmail-pdf-runs.db"),
+    )
+    gmail_pdf_pack = GmailPdfPack(
+        script_dir=settings.gmail_pdf_script_dir,
+        output_dir=settings.gmail_pdf_output_dir,
+        python_path=settings.gmail_pdf_python,
+        timeout_s=settings.gmail_pdf_timeout_s,
+        store=_gmail_pdf_store,
+    )
+
 
 async def _persist_task_update(task) -> None:
     try:
