@@ -27,6 +27,8 @@ This project is governed by the ASIF portfolio. On every session:
 4. Update initiative statuses in NEXUS if your work changes them
 5. If you have questions for the CoS, add them under `## Team Questions` in NEXUS
 
+**Team Questions (Escalation to CoS)**: The CoS runs enrichment cycles **3x daily** and checks `## Team Questions` in your NEXUS every time. Use this for: portfolio-level guidance, architecture review requests, cross-project context ("does another project already have X?"), blockers outside your project scope, or decisions requiring Asif's input. Write your question in NEXUS, the CoS will respond inline.
+
 ## Project Vision
 An intelligent desktop assistant that observes user activity and can autonomously execute tasks like drafting emails, managing windows, and automating workflows. Read `myVISION.md` for the canonical product vision — every feature must trace back to it.
 
