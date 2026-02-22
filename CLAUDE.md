@@ -51,8 +51,9 @@ An intelligent desktop assistant that observes user activity and can autonomousl
 ## Key Directories
 ```
 backend/app/          - FastAPI application code
-backend/app/routes/   - 16 route modules
-backend/tests/        - pytest test suite (724+ unit + 12 integration tests)
+backend/app/routes/   - 17 route modules
+backend/packs/        - ActionWorkflow Packs (self-contained automation integrations)
+backend/tests/        - pytest test suite (742+ unit + 12 integration tests)
 backend/web/          - Static web UI (HTML/CSS/JS)
 backend/web/modules/  - 10 ES modules
 collector/            - Rust collector source (94 tests)
@@ -79,11 +80,11 @@ ui-tests/             - Playwright end-to-end tests
 # Backend (manual)
 cd /home/axw/projects/DesktopAI
 source .venv/bin/activate
-pytest backend/tests/ -m "not integration" -q   # 612 unit tests
+pytest backend/tests/ -m "not integration" -q   # 742 unit tests
 uvicorn app.main:app --app-dir backend           # Dev server
 
 # Linting & Type Checking
-ruff check backend/app/ backend/tests/           # Python linting
+ruff check backend/app/ backend/tests/ backend/packs/  # Python linting
 pyright backend/app/                              # Type checking (0 errors expected)
 cd collector && cargo clippy --all-targets -- -D warnings  # Rust linting
 
@@ -111,9 +112,12 @@ make ui-test                                      # Headless Playwright
 - `POST /api/autonomy/start` — Start orchestrator-based autonomous run
 - `POST /api/tts` — Synthesize text to WAV audio (Kokoro-82M, fallback to browser TTS)
 - `GET /api/tts/voices` — List available TTS voices
+- `POST /api/packs/gmail-pdf/run` — Trigger Gmail PDF newsletter compilation
+- `GET /api/packs/gmail-pdf/status` — Pack availability + last run info
+- `GET /api/packs/gmail-pdf/runs` — List recent compilation runs
 
 ## Testing Standards
-- 724+ Python unit tests + 12 integration tests, 94 Rust tests — never decrease
+- 742+ Python unit tests + 12 integration tests, 94 Rust tests — never decrease
 - New features require test coverage
 - Edge cases and error paths must be tested
 - CI runs ruff, pyright, and clippy before tests
@@ -136,6 +140,7 @@ Direct bridge patterns (no vision/LLM needed):
 - `scroll up/down` → `scroll`
 - `press/send {keys}` → `send_keys`
 - `stop/kill/cancel/abort` → cancel all running actions (no bridge needed)
+- `compile/build/run newsletters [for N days]` → Gmail PDF pack (no bridge needed)
 
 ## TTS (Kokoro-82M)
 - **Engine**: `backend/app/tts.py` — `TtsEngine` class wrapping `kokoro_onnx`, lazy model init on first request
@@ -154,6 +159,22 @@ Direct bridge patterns (no vision/LLM needed):
 - **Dep**: `pip install faster-whisper` (pulls ctranslate2, tokenizers — all Apache 2.0)
 - **Singleton**: `stt_engine` in `deps.py`, conditional on `stt_enabled`
 - **Readiness**: STT check added (non-required) — shows `stt_available` + `stt_engine` in summary
+
+## ActionWorkflow Packs
+Packs are self-contained automation integrations that run as subprocesses — zero coupling to the backend venv.
+- **Location**: `backend/packs/` (each pack is a sub-package)
+- **Pattern**: `PackRunStore` (SQLite run history) + wrapper class (subprocess executor)
+- **Chat routing**: Patterns added to `_DIRECT_PATTERNS` in `routes/agent.py`, handled before bridge check
+- **Gmail PDF Pack** (`backend/packs/gmail_pdf/`):
+  - Wraps `~/projects/.nxtg.ai/DesktopAI/3-Tools-Utils/gmail/main_pdf.py`
+  - Subprocess with separate venv (`GMAIL_PDF_PYTHON`), credentials stay in place (`cwd=script_dir`)
+  - Config: `GMAIL_PDF_ENABLED`, `GMAIL_PDF_SCRIPT_DIR`, `GMAIL_PDF_OUTPUT_DIR`, `GMAIL_PDF_TIMEOUT_S`, `GMAIL_PDF_PYTHON`
+  - Singleton: `gmail_pdf_pack` in `deps.py`, conditional on `gmail_pdf_enabled`
+  - Routes: `POST /api/packs/gmail-pdf/run`, `GET .../status`, `GET .../runs`, `GET .../runs/{run_id}`
+  - Chat: "compile newsletters", "build newsletters for 7 days", "run newsletter from last 3 days"
+  - Uses `asyncio.Lock` (not threading.Lock) — critical section contains `await`
+  - Blocked from multi-step chains (long-running)
+  - Existing cron job unaffected
 
 ## Key Patterns
 - SQLite stores: separate DB file, `threading.Lock`, `asyncio.to_thread`, WAL mode
@@ -232,6 +253,9 @@ Direct bridge patterns (no vision/LLM needed):
 - **Auto-Speak Toggle**: Opt-in checkbox below chat bar, localStorage-persisted (`desktopai-autospeak`). Calls `speakText()` after both SSE streaming and JSON responses.
 - **Reusable `.btn-icon` CSS**: 38px circle icon button utility with dark mode support.
 - 100% frontend sprint — zero Python changes, 724 backend tests unaffected.
+
+## What's Shipped (Sprint 12)
+- **Gmail PDF AWP (N-AWP)**: First ActionWorkflow Pack — Gmail PDF Compiler integrated as subprocess wrapper. `PackRunStore` (SQLite run history), `GmailPdfPack` (async subprocess with timeout/kill), REST API (4 endpoints), chat command routing ("compile newsletters for 7 days"). Zero coupling — separate venv, credentials in place, cron job unaffected. 18 new tests.
 
 ## What's Next (see BACKLOG.md)
 - 3D Blender avatar with WebGL/WebGPU renderer
